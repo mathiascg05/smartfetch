@@ -8,4 +8,32 @@
  * @packageDocumentation
  */
 
+/** Versión actual de la librería. */
 export const VERSION = '0.1.0';
+
+// Contratos públicos (tipos e interfaces de configuración y respuesta).
+export type {
+  HttpMethod,
+  ResponseType,
+  QueryParamValue,
+  QueryParams,
+  HeadersInit,
+  RequestConfig,
+  SmartFetchResponse,
+} from './types.js';
+
+// Modelo de errores controlados.
+export {
+  SmartFetchError,
+  TimeoutError,
+  NetworkError,
+  HttpError,
+} from './errors.js';
+
+export type {
+  SmartFetchErrorType,
+  SmartFetchErrorOptions,
+  TimeoutErrorOptions,
+  NetworkErrorOptions,
+  HttpErrorOptions,
+} from './errors.js';
