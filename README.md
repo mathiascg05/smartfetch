@@ -8,6 +8,32 @@ e interceptores.
 > 🚧 En desarrollo. La documentación completa de instalación y uso se irá completando en los
 > próximos commits (ver el plan del proyecto).
 
+## Uso
+
+```ts
+import { SmartFetch, HttpError } from 'smartfetch';
+
+const client = new SmartFetch({ baseURL: 'https://api.ejemplo.com' });
+
+// GET con parámetros de consulta y tipado del cuerpo de la respuesta.
+const { data, status } = await client.get<Usuario[]>('/usuarios', { params: { page: 1 } });
+console.log(status, data);
+
+// Errores controlados: HTTP (4xx/5xx) y de red.
+try {
+  await client.get('/usuarios/999');
+} catch (error) {
+  if (error instanceof HttpError) {
+    console.error('HTTP', error.status, error.response?.data);
+  }
+}
+```
+
+La respuesta es un `SmartFetchResponse<T>` con `data`, `status`, `statusText`, `headers`, `ok`,
+`url`, `config` y `raw` (el `Response` nativo). Por defecto el cuerpo se parsea como JSON; puede
+cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer'`. El `fetch` subyacente es inyectable
+(`new SmartFetch(defaults, { fetch })`) siguiendo el patrón Adapter.
+
 ## Características previstas
 
 - ⏱️ **Timeout** configurable por petición (cancelación automática vía `AbortController`).

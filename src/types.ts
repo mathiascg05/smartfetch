@@ -133,3 +133,32 @@ export interface SmartFetchResponse<T = unknown> {
   /** Objeto {@link Response} nativo, por si se necesita acceso de bajo nivel. */
   raw: Response;
 }
+
+/**
+ * Adaptador de bajo nivel que realiza la petición HTTP real.
+ *
+ * Abstrae la dependencia concreta de `fetch` (patrón Adapter): por defecto el
+ * cliente usa `globalThis.fetch`, pero puede inyectarse otra implementación
+ * compatible (por ejemplo, un `fetch` de prueba en los tests, o un polyfill).
+ *
+ * @param input - URL final ya construida de la petición.
+ * @param init - Opciones nativas de la petición (método, cabeceras, cuerpo, señal, etc.).
+ * @returns El {@link Response} nativo resultante.
+ */
+export type FetchAdapter = (input: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Opciones a nivel de cliente (no de una petición individual).
+ *
+ * Se pasan al construir una instancia de `SmartFetch` y configuran su
+ * comportamiento global, a diferencia de {@link RequestConfig}, que describe
+ * una petición concreta.
+ */
+export interface SmartFetchOptions {
+  /**
+   * Implementación de `fetch` a utilizar. Por defecto `globalThis.fetch`.
+   * Permite inyectar un adaptador propio (patrón Adapter) o mockear la red
+   * en los tests sin alterar el `fetch` global.
+   */
+  fetch?: FetchAdapter;
+}

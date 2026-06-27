@@ -11,6 +11,9 @@
 /** Versión actual de la librería. */
 export const VERSION = '0.1.0';
 
+// Cliente HTTP (núcleo de la librería).
+export { SmartFetch } from './client.js';
+
 // Contratos públicos (tipos e interfaces de configuración y respuesta).
 export type {
   HttpMethod,
@@ -20,6 +23,8 @@ export type {
   HeadersInit,
   RequestConfig,
   SmartFetchResponse,
+  FetchAdapter,
+  SmartFetchOptions,
 } from './types.js';
 
 // Modelo de errores controlados.
