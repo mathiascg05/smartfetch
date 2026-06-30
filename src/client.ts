@@ -138,6 +138,71 @@ export class SmartFetch {
     return this.request<T>({ ...config, method: 'GET', url });
   }
 
+  /**
+   * Realiza una petición `POST`.
+   *
+   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
+   * @param url - Ruta o URL del recurso.
+   * @param body - Cuerpo a enviar. Si es un objeto plano se serializa como JSON
+   *   y se añade la cabecera `Content-Type: application/json` (salvo que ya exista).
+   * @param config - Configuración adicional de la petición.
+   */
+  post<T = unknown>(
+    url: string,
+    body?: unknown,
+    config: RequestConfig = {},
+  ): Promise<SmartFetchResponse<T>> {
+    return this.request<T>({ ...config, method: 'POST', url, body });
+  }
+
+  /**
+   * Realiza una petición `PUT`.
+   *
+   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
+   * @param url - Ruta o URL del recurso.
+   * @param body - Cuerpo a enviar. Si es un objeto plano se serializa como JSON
+   *   y se añade la cabecera `Content-Type: application/json` (salvo que ya exista).
+   * @param config - Configuración adicional de la petición.
+   */
+  put<T = unknown>(
+    url: string,
+    body?: unknown,
+    config: RequestConfig = {},
+  ): Promise<SmartFetchResponse<T>> {
+    return this.request<T>({ ...config, method: 'PUT', url, body });
+  }
+
+  /**
+   * Realiza una petición `PATCH`.
+   *
+   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
+   * @param url - Ruta o URL del recurso.
+   * @param body - Cuerpo a enviar. Si es un objeto plano se serializa como JSON
+   *   y se añade la cabecera `Content-Type: application/json` (salvo que ya exista).
+   * @param config - Configuración adicional de la petición.
+   */
+  patch<T = unknown>(
+    url: string,
+    body?: unknown,
+    config: RequestConfig = {},
+  ): Promise<SmartFetchResponse<T>> {
+    return this.request<T>({ ...config, method: 'PATCH', url, body });
+  }
+
+  /**
+   * Realiza una petición `DELETE`.
+   *
+   * No recibe cuerpo de forma posicional (lo habitual en este verbo); si se
+   * necesitara enviar uno, puede pasarse mediante `config.body`.
+   *
+   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
+   * @param url - Ruta o URL del recurso.
+   * @param config - Configuración adicional de la petición.
+   */
+  delete<T = unknown>(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<T>> {
+    return this.request<T>({ ...config, method: 'DELETE', url });
+  }
+
   /** Construye las opciones nativas (`RequestInit`) a partir de la configuración efectiva. */
   private buildRequestInit(config: RequestConfig): RequestInit {
     const headers: HeadersInit = { ...config.headers };
