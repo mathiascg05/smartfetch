@@ -19,6 +19,15 @@ const client = new SmartFetch({ baseURL: 'https://api.ejemplo.com' });
 const { data, status } = await client.get<Usuario[]>('/usuarios', { params: { page: 1 } });
 console.log(status, data);
 
+// POST/PUT/PATCH: el cuerpo va como 2º argumento (estilo axios). Si es un objeto
+// plano se serializa a JSON y se añade Content-Type: application/json automáticamente.
+const creado = await client.post<Usuario>('/usuarios', { nombre: 'Ada' });
+await client.put<Usuario>('/usuarios/1', { nombre: 'Ada Lovelace' });
+await client.patch<Usuario>('/usuarios/1', { activo: false });
+
+// DELETE no recibe cuerpo posicional.
+await client.delete('/usuarios/1');
+
 // Errores controlados: HTTP (4xx/5xx) y de red.
 try {
   await client.get('/usuarios/999');

@@ -126,6 +126,82 @@ describe('SmartFetch (núcleo + GET)', () => {
     });
   });
 
+  describe('métodos con cuerpo (POST/PUT/PATCH/DELETE)', () => {
+    it('POST serializa un objeto plano a JSON y añade Content-Type', async () => {
+      const fetchMock = jsonAdapter({ id: 1 }, { status: 201 });
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: fetchMock });
+
+      const res = await client.post('/usuarios', { nombre: 'Ada' });
+
+      const [calledUrl, init] = fetchMock.mock.calls[0];
+      expect(calledUrl).toBe('https://api.x.com/usuarios');
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBe(JSON.stringify({ nombre: 'Ada' }));
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe('application/json');
+      expect(res.status).toBe(201);
+    });
+
+    it('POST respeta el Content-Type provisto por el usuario', async () => {
+      const fetchMock = jsonAdapter({});
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await client.post('https://api.x.com/u', { a: 1 }, { headers: { 'Content-Type': 'application/vnd.api+json' } });
+
+      const [, init] = fetchMock.mock.calls[0];
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['Content-Type']).toBe('application/vnd.api+json');
+    });
+
+    it('PUT envía el método y el cuerpo serializado', async () => {
+      const fetchMock = jsonAdapter({ ok: true });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await client.put('https://api.x.com/u/1', { nombre: 'Grace' });
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init?.method).toBe('PUT');
+      expect(init?.body).toBe(JSON.stringify({ nombre: 'Grace' }));
+    });
+
+    it('PATCH envía el método y el cuerpo serializado', async () => {
+      const fetchMock = jsonAdapter({ ok: true });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await client.patch('https://api.x.com/u/1', { activo: false });
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init?.method).toBe('PATCH');
+      expect(init?.body).toBe(JSON.stringify({ activo: false }));
+    });
+
+    it('DELETE usa el método correcto sin cuerpo y normaliza un 204', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: fetchMock });
+
+      const res = await client.delete('/usuarios/1');
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init?.method).toBe('DELETE');
+      expect(init?.body).toBeUndefined();
+      expect(res.status).toBe(204);
+      expect(res.data).toBeNull();
+    });
+
+    it('no vuelve a serializar un cuerpo que ya es string', async () => {
+      const fetchMock = jsonAdapter({});
+      const client = new SmartFetch({}, { fetch: fetchMock });
+      const crudo = 'campo=valor&otro=2';
+
+      await client.post('https://api.x.com/form', crudo, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init?.body).toBe(crudo);
+    });
+  });
+
   describe('configuración del cliente', () => {
     it('lanza SmartFetchError si no hay fetch disponible ni inyectado', () => {
       const original = globalThis.fetch;
