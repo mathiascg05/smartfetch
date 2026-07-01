@@ -22,6 +22,7 @@ import type {
   SmartFetchOptions,
   SmartFetchResponse,
 } from './types.js';
+import { withTimeout } from './timeout.js';
 import { buildURL } from './url.js';
 
 /**
@@ -104,7 +105,15 @@ export class SmartFetch {
 
     let raw: Response;
     try {
-      raw = await this.adapter(url, init);
+      // El timeout (y la señal externa) se gestionan en withTimeout, que inyecta
+      // la señal combinada al init de la petición y traduce un plazo agotado a un
+      // TimeoutError controlado.
+      raw = await withTimeout(
+        effective.timeout,
+        effective.signal,
+        (signal) => this.adapter(url, signal ? { ...init, signal } : init),
+        effective,
+      );
     } catch (error) {
       if (error instanceof SmartFetchError) {
         throw error;
@@ -211,9 +220,8 @@ export class SmartFetch {
       headers,
     };
 
-    if (config.signal) {
-      init.signal = config.signal;
-    }
+    // La señal (timeout + señal externa combinadas) la inyecta withTimeout al
+    // ejecutar la petición; aquí no se toca `init.signal`.
 
     if (config.body !== undefined && config.method !== 'GET') {
       if (isPlainObject(config.body)) {
