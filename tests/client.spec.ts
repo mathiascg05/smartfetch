@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { SmartFetch } from '../src/client.js';
-import { HttpError, NetworkError } from '../src/errors.js';
+import { HttpError, NetworkError, TimeoutError } from '../src/errors.js';
 import type { FetchAdapter } from '../src/types.js';
 
 /**
@@ -199,6 +199,37 @@ describe('SmartFetch (núcleo + GET)', () => {
 
       const [, init] = fetchMock.mock.calls[0];
       expect(init?.body).toBe(crudo);
+    });
+  });
+
+  describe('timeout', () => {
+    /** Adaptador que se cuelga hasta que su señal se aborta (simula una respuesta lenta). */
+    const hangingAdapter: FetchAdapter = (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        });
+      });
+
+    it('lanza TimeoutError cuando la petición supera el tiempo configurado', async () => {
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: hangingAdapter });
+
+      expect.assertions(2);
+      try {
+        await client.get('/lento', { timeout: 10 });
+      } catch (error) {
+        expect(error).toBeInstanceOf(TimeoutError);
+        expect((error as TimeoutError).isTimeout()).toBe(true);
+      }
+    });
+
+    it('no cancela una petición que responde dentro del plazo', async () => {
+      const fetchMock = jsonAdapter({ ok: true });
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: fetchMock });
+
+      const res = await client.get('/rapido', { timeout: 1000 });
+      expect(res.data).toEqual({ ok: true });
+      expect(res.status).toBe(200);
     });
   });
 
