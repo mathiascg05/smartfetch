@@ -14,6 +14,10 @@ export const VERSION = '0.1.0';
 // Cliente HTTP (núcleo de la librería).
 export { SmartFetch } from './client.js';
 
+// Estrategias de backoff para reintentos (patrón Strategy).
+export { FixedBackoff, ExponentialBackoff } from './retry/backoff.js';
+export type { BackoffStrategy } from './retry/backoff.js';
+
 // Contratos públicos (tipos e interfaces de configuración y respuesta).
 export type {
   HttpMethod,
@@ -22,6 +26,7 @@ export type {
   QueryParams,
   HeadersInit,
   RequestConfig,
+  RetryPredicate,
   SmartFetchResponse,
   FetchAdapter,
   SmartFetchOptions,
