@@ -23,6 +23,7 @@ import type {
   SmartFetchResponse,
 } from './types.js';
 import { withTimeout } from './timeout.js';
+import { defaultShouldRetry, withRetry } from './retry/retry.js';
 import { buildURL } from './url.js';
 
 /**
@@ -91,6 +92,7 @@ export class SmartFetch {
    * @param config - Configuración de la petición (se fusiona con los valores por defecto).
    * @throws {HttpError} Si el servidor responde con un código fuera del rango 2xx.
    * @throws {NetworkError} Si la petición falla por un problema de red.
+   * @throws {TimeoutError} Si la petición supera el tiempo máximo de espera.
    */
   async request<T = unknown>(config: RequestConfig): Promise<SmartFetchResponse<T>> {
     const effective: RequestConfig = {
@@ -100,9 +102,34 @@ export class SmartFetch {
       headers: { ...this.defaults.headers, ...config.headers },
     };
 
+    // La URL y las opciones nativas se construyen una sola vez y se reutilizan en
+    // cada intento (el motor de reintentos vuelve a ejecutar performAttempt).
     const url = buildURL(effective);
     const init = this.buildRequestInit(effective);
 
+    return withRetry((): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(url, init, effective), {
+      retries: effective.retries ?? 0,
+      backoff: effective.backoff,
+      shouldRetry: effective.retryOn ?? defaultShouldRetry,
+      signal: effective.signal,
+    });
+  }
+
+  /**
+   * Ejecuta un único intento de la petición: realiza la llamada (con timeout y
+   * señal externa combinados), normaliza la respuesta y traduce los fallos al
+   * modelo de errores de la librería. El motor de reintentos ({@link withRetry})
+   * lo invoca una o varias veces según la política configurada.
+   *
+   * @throws {HttpError} Si el servidor responde con un código fuera del rango 2xx.
+   * @throws {NetworkError} Si la petición falla por un problema de red.
+   * @throws {TimeoutError} Si la petición supera el tiempo máximo de espera.
+   */
+  private async performAttempt<T>(
+    url: string,
+    init: RequestInit,
+    effective: RequestConfig,
+  ): Promise<SmartFetchResponse<T>> {
     let raw: Response;
     try {
       // El timeout (y la señal externa) se gestionan en withTimeout, que inyecta

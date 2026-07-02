@@ -9,6 +9,8 @@
  * @module types
  */
 
+import type { BackoffStrategy } from './retry/backoff.js';
+
 /**
  * Métodos HTTP soportados por el cliente.
  *
@@ -48,6 +50,20 @@ export type QueryParams = Record<string, QueryParamValue | QueryParamValue[]>;
  * Cabeceras HTTP representadas como pares clave/valor de texto.
  */
 export type HeadersInit = Record<string, string>;
+
+/**
+ * Predicado que decide, ante un error, si una petición fallida debe reintentarse.
+ *
+ * Recibe el error capturado y el número de reintento que se realizaría (1-based)
+ * y devuelve `true` para reintentar o `false` para propagar el error. Permite
+ * personalizar la política de reintentos vía {@link RequestConfig.retryOn}; si no
+ * se provee, la librería reintenta ante errores de red y respuestas HTTP 5xx.
+ *
+ * @param error - Error capturado en el intento fallido.
+ * @param attempt - Número de reintento que se realizaría (empezando en `1`).
+ * @returns `true` si debe reintentarse; `false` para propagar el error.
+ */
+export type RetryPredicate = (error: unknown, attempt: number) => boolean;
 
 /**
  * Configuración de una petición HTTP.
@@ -92,6 +108,20 @@ export interface RequestConfig {
    * Por defecto es `0`, es decir, la librería realiza un único intento.
    */
   retries?: number;
+
+  /**
+   * Estrategia de espera entre reintentos (patrón Strategy). Si se omite, los
+   * reintentos se realizan de inmediato, sin espera. Solo tiene efecto cuando
+   * {@link RequestConfig.retries} es mayor que `0`.
+   */
+  backoff?: BackoffStrategy;
+
+  /**
+   * Predicado que decide, ante un error, si la petición debe reintentarse. Si se
+   * omite, la política por defecto reintenta ante errores de red y respuestas
+   * HTTP 5xx, pero nunca ante timeouts ni errores de cliente (4xx).
+   */
+  retryOn?: RetryPredicate;
 
   /** Formato en el que se interpretará el cuerpo de la respuesta. Por defecto `json`. */
   responseType?: ResponseType;

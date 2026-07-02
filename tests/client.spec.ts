@@ -233,6 +233,83 @@ describe('SmartFetch (núcleo + GET)', () => {
     });
   });
 
+  describe('reintentos', () => {
+    /** Adaptador que responde con los estados indicados, uno por llamada consecutiva. */
+    function sequenceAdapter(statuses: number[]): jest.Mock<FetchAdapter> {
+      let i = 0;
+      return jest.fn<FetchAdapter>(async () => {
+        const status = statuses[Math.min(i, statuses.length - 1)];
+        i += 1;
+        return new Response(JSON.stringify({ ok: status < 400 }), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+    }
+
+    it('reintenta ante 5xx y resuelve cuando un intento devuelve 2xx', async () => {
+      const fetchMock = sequenceAdapter([500, 500, 200]);
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: fetchMock });
+
+      const res = await client.get('/inestable', { retries: 2 });
+
+      expect(res.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('no reintenta ante un 4xx (un solo intento) y lanza HttpError', async () => {
+      const fetchMock = sequenceAdapter([400]);
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: fetchMock });
+
+      await expect(client.get('/malo', { retries: 3 })).rejects.toBeInstanceOf(HttpError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('por defecto (retries omitido) realiza un único intento', async () => {
+      const fetchMock = sequenceAdapter([500]);
+      const client = new SmartFetch({ baseURL: 'https://api.x.com' }, { fetch: fetchMock });
+
+      await expect(client.get('/error')).rejects.toBeInstanceOf(HttpError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('reintenta ante un fallo de red transitorio', async () => {
+      let intentos = 0;
+      const fetchMock = jest.fn<FetchAdapter>(async () => {
+        intentos += 1;
+        if (intentos < 2) {
+          throw new TypeError('Failed to fetch');
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const res = await client.get('https://api.x.com/x', { retries: 1 });
+      expect(res.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('no reintenta ante un timeout aunque haya reintentos disponibles', async () => {
+      const hangingAdapter = jest.fn<FetchAdapter>(
+        (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+          }),
+      );
+      const client = new SmartFetch({}, { fetch: hangingAdapter });
+
+      await expect(
+        client.get('https://api.x.com/lento', { timeout: 10, retries: 3 }),
+      ).rejects.toBeInstanceOf(TimeoutError);
+      expect(hangingAdapter).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('configuración del cliente', () => {
     it('lanza SmartFetchError si no hay fetch disponible ni inyectado', () => {
       const original = globalThis.fetch;
