@@ -43,6 +43,39 @@ La respuesta es un `SmartFetchResponse<T>` con `data`, `status`, `statusText`, `
 cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer'`. El `fetch` subyacente es inyectable
 (`new SmartFetch(defaults, { fetch })`) siguiendo el patrón Adapter.
 
+### Interceptores (Programación Orientada a Aspectos)
+
+Los interceptores permiten tratar de forma centralizada preocupaciones transversales —logging,
+autenticación, transformación de datos o recuperación de errores— sin tocar el núcleo del cliente.
+
+```ts
+// Interceptor de petición: se ejecuta antes de enviar. Ideal para autenticación o logging.
+const authId = client.interceptors.request.use((config) => {
+  config.headers = { ...config.headers, Authorization: 'Bearer ' + token };
+  return config;
+});
+
+// Interceptor de respuesta: transforma la respuesta ya recibida.
+client.interceptors.response.use((response) => {
+  console.log(`${response.config.method} ${response.url} -> ${response.status}`);
+  return response;
+});
+
+// El 2º argumento maneja errores y puede recuperarse devolviendo una respuesta de fallback.
+client.interceptors.response.use(undefined, (error) => {
+  if (error instanceof HttpError && error.status >= 500) {
+    return { ...error.response, data: { offline: true } };
+  }
+  throw error; // se relanza para propagarlo si no se puede recuperar
+});
+
+// use() devuelve un id para eliminar el interceptor más tarde.
+client.interceptors.request.eject(authId);
+```
+
+Los interceptores de petición se ejecutan en orden inverso al de registro (LIFO) y los de respuesta
+en orden de registro (FIFO), igual que en `axios`.
+
 ## Características previstas
 
 - ⏱️ **Timeout** configurable por petición (cancelación automática vía `AbortController`).
