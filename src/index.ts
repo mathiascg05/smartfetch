@@ -18,6 +18,10 @@ export { SmartFetch } from './client.js';
 export { FixedBackoff, ExponentialBackoff } from './retry/backoff.js';
 export type { BackoffStrategy } from './retry/backoff.js';
 
+// Interceptores de petición/respuesta (Programación Orientada a Aspectos).
+export { InterceptorManager } from './interceptors.js';
+export type { Interceptor, InterceptorFulfilled, InterceptorRejected } from './interceptors.js';
+
 // Contratos públicos (tipos e interfaces de configuración y respuesta).
 export type {
   HttpMethod,

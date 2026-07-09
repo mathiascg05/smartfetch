@@ -24,6 +24,7 @@ import type {
 } from './types.js';
 import { withTimeout } from './timeout.js';
 import { defaultShouldRetry, withRetry } from './retry/retry.js';
+import { InterceptorManager } from './interceptors.js';
 import { buildURL } from './url.js';
 
 /**
@@ -68,6 +69,25 @@ export class SmartFetch {
   private readonly adapter: FetchAdapter;
 
   /**
+   * Interceptores de petición y respuesta (Programación Orientada a Aspectos).
+   *
+   * - `request`: transforman la {@link RequestConfig} **antes** de construir la
+   *   URL y enviar la petición (p. ej. añadir cabeceras de autenticación).
+   * - `response`: transforman la {@link SmartFetchResponse} tras recibirla, y sus
+   *   manejadores de error pueden observar o **recuperarse** de un fallo.
+   *
+   * @example
+   * client.interceptors.request.use((config) => {
+   *   config.headers = { ...config.headers, Authorization: 'Bearer token' };
+   *   return config;
+   * });
+   */
+  readonly interceptors = {
+    request: new InterceptorManager<RequestConfig>(),
+    response: new InterceptorManager<SmartFetchResponse>(),
+  };
+
+  /**
    * @param defaults - Configuración por defecto que se fusiona con la de cada petición.
    * @param options - Opciones a nivel de cliente (por ejemplo, el `fetch` a inyectar).
    */
@@ -95,13 +115,67 @@ export class SmartFetch {
    * @throws {TimeoutError} Si la petición supera el tiempo máximo de espera.
    */
   async request<T = unknown>(config: RequestConfig): Promise<SmartFetchResponse<T>> {
-    const effective: RequestConfig = {
+    const effective = this.mergeConfig(config);
+
+    // Se construye la cadena de la Programación Orientada a Aspectos (AOP):
+    //   [interceptores de request] -> núcleo (dispatch) -> [interceptores de response]
+    // Cada eslabón es un par [onFulfilled, onRejected] que se encadena con
+    // `.then(...)`, igual que en axios. Así los interceptores envuelven el núcleo
+    // sin que este conozca su existencia.
+    const chain: Array<[unknown, unknown]> = [];
+
+    // Los interceptores de request se ejecutan en orden INVERSO al de registro
+    // (LIFO): el último en registrarse es el primero en transformar la config.
+    this.interceptors.request.forEach((interceptor) => {
+      chain.unshift([interceptor.fulfilled, interceptor.rejected]);
+    });
+
+    // Núcleo de la petición: recibe la config ya interceptada y devuelve la respuesta.
+    chain.push([(cfg: RequestConfig): Promise<SmartFetchResponse<T>> => this.dispatch<T>(cfg), undefined]);
+
+    // Los interceptores de response se ejecutan en orden de registro (FIFO).
+    this.interceptors.response.forEach((interceptor) => {
+      chain.push([interceptor.fulfilled, interceptor.rejected]);
+    });
+
+    // El valor que fluye por la cadena cambia de tipo (RequestConfig -> respuesta)
+    // al pasar por el núcleo, por lo que se opera sobre una promesa sin tipar y se
+    // reafirma el tipo final al devolverla (mismo enfoque que axios).
+    let promise: Promise<unknown> = Promise.resolve(effective);
+    for (const [onFulfilled, onRejected] of chain) {
+      promise = promise.then(
+        onFulfilled as (value: unknown) => unknown,
+        onRejected as ((reason: unknown) => unknown) | undefined,
+      );
+    }
+    return promise as Promise<SmartFetchResponse<T>>;
+  }
+
+  /**
+   * Fusiona la configuración por defecto del cliente con la de una petición
+   * concreta, dando prioridad a esta última y combinando las cabeceras.
+   *
+   * @param config - Configuración específica de la petición.
+   * @returns La configuración efectiva con la que se realizará la petición.
+   */
+  private mergeConfig(config: RequestConfig): RequestConfig {
+    return {
       ...this.defaults,
       ...config,
       method: config.method ?? this.defaults.method ?? 'GET',
       headers: { ...this.defaults.headers, ...config.headers },
     };
+  }
 
+  /**
+   * Núcleo de la petición: construye la URL y las opciones nativas una sola vez
+   * y ejecuta el intento (con reintentos y timeout). Es el eslabón central que
+   * los interceptores envuelven.
+   *
+   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
+   * @param effective - Configuración efectiva (ya fusionada e interceptada).
+   */
+  private dispatch<T>(effective: RequestConfig): Promise<SmartFetchResponse<T>> {
     // La URL y las opciones nativas se construyen una sola vez y se reutilizan en
     // cada intento (el motor de reintentos vuelve a ejecutar performAttempt).
     const url = buildURL(effective);
