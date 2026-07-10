@@ -3,14 +3,15 @@
  *
  * Define una jerarquía de errores controlados que permite a quien consume la
  * librería distinguir con claridad la causa de un fallo (tiempo de espera
- * agotado, problema de red o respuesta HTTP no satisfactoria) y reaccionar en
- * consecuencia. Todos los errores heredan de {@link SmartFetchError}, por lo
+ * agotado, problema de red, respuesta HTTP no satisfactoria o cuerpo que no se
+ * pudo parsear) y reaccionar en consecuencia. Todos los errores heredan de
+ * {@link SmartFetchError}, por lo
  * que pueden capturarse de forma genérica o específica.
  *
  * @module errors
  */
 
-import type { RequestConfig, SmartFetchResponse } from './types.js';
+import type { RequestConfig, ResponseType, SmartFetchResponse } from './types.js';
 
 /**
  * Categoría a la que pertenece un {@link SmartFetchError}.
@@ -18,10 +19,12 @@ import type { RequestConfig, SmartFetchResponse } from './types.js';
  * - `timeout`: la petición superó el tiempo máximo de espera.
  * - `network`: hubo un fallo de red (servidor inalcanzable, sin conexión, etc.).
  * - `http`: el servidor respondió con un código de estado de error.
+ * - `parse`: el cuerpo de una respuesta satisfactoria no pudo interpretarse en el
+ *   formato solicitado (por ejemplo, JSON malformado).
  * - `request`: la petición no pudo construirse o configurarse correctamente.
  * - `unknown`: causa no clasificada.
  */
-export type SmartFetchErrorType = 'timeout' | 'network' | 'http' | 'request' | 'unknown';
+export type SmartFetchErrorType = 'timeout' | 'network' | 'http' | 'parse' | 'request' | 'unknown';
 
 /**
  * Opciones comunes para construir un {@link SmartFetchError}.
@@ -98,6 +101,11 @@ export class SmartFetchError extends Error {
   /** Indica si el error se debe a una respuesta HTTP no satisfactoria. */
   isHttp(): this is HttpError {
     return this.type === 'http';
+  }
+
+  /** Indica si el error se debe a que el cuerpo de una respuesta no pudo parsearse. */
+  isParse(): this is ParseError {
+    return this.type === 'parse';
   }
 }
 
@@ -207,5 +215,51 @@ export class HttpError extends SmartFetchError {
     this.status = status;
     this.statusText = statusText;
     this.response = options.response;
+  }
+}
+
+/**
+ * Opciones para construir un {@link ParseError}.
+ */
+export interface ParseErrorOptions {
+  /** Configuración de la petición cuya respuesta no pudo parsearse. */
+  config?: RequestConfig;
+  /** Formato en el que se intentó interpretar el cuerpo. */
+  responseType?: ResponseType;
+  /** Texto crudo del cuerpo que no pudo interpretarse (útil para depurar). */
+  text?: string;
+  /** Causa original (por ejemplo, el `SyntaxError` de `JSON.parse`). */
+  cause?: unknown;
+}
+
+/**
+ * Error lanzado cuando el cuerpo de una respuesta satisfactoria no puede
+ * interpretarse en el formato solicitado, típicamente JSON malformado.
+ *
+ * En las respuestas de error (fuera del rango aceptado) prevalece
+ * {@link HttpError} y el cuerpo crudo se adjunta como `data`, por lo que este
+ * error no se emite en ese caso: solo surge cuando la respuesta se considera
+ * satisfactoria pero su cuerpo es ilegible.
+ */
+export class ParseError extends SmartFetchError {
+  /** Formato en el que se intentó interpretar el cuerpo. */
+  readonly responseType: ResponseType;
+
+  /** Texto crudo del cuerpo que no pudo interpretarse, si está disponible. */
+  readonly text?: string;
+
+  /**
+   * @param message - Mensaje descriptivo del fallo de parseo.
+   * @param options - Metadatos opcionales del error (configuración, formato, texto crudo y causa).
+   */
+  constructor(message: string, options: ParseErrorOptions = {}) {
+    super(message, {
+      type: 'parse',
+      config: options.config,
+      cause: options.cause,
+    });
+    this.name = 'ParseError';
+    this.responseType = options.responseType ?? 'json';
+    this.text = options.text;
   }
 }

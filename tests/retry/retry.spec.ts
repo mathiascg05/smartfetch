@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import { defaultShouldRetry, withRetry } from '../../src/retry/retry.js';
 import { FixedBackoff } from '../../src/retry/backoff.js';
-import { HttpError, NetworkError, TimeoutError } from '../../src/errors.js';
+import { HttpError, NetworkError, ParseError, TimeoutError } from '../../src/errors.js';
 
 /**
  * Pruebas unitarias del motor de reintentos {@link withRetry} y de la política
@@ -131,6 +131,10 @@ describe('defaultShouldRetry', () => {
 
   it('no reintenta ante timeouts', () => {
     expect(defaultShouldRetry(new TimeoutError(1000))).toBe(false);
+  });
+
+  it('no reintenta ante errores de parseo', () => {
+    expect(defaultShouldRetry(new ParseError('JSON inválido'))).toBe(false);
   });
 
   it('no reintenta ante errores desconocidos', () => {
