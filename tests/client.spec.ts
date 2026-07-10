@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { SmartFetch } from '../src/client.js';
-import { HttpError, NetworkError, TimeoutError } from '../src/errors.js';
+import { HttpError, NetworkError, ParseError, TimeoutError } from '../src/errors.js';
 import type { FetchAdapter } from '../src/types.js';
 
 /**
@@ -81,6 +81,30 @@ describe('SmartFetch (núcleo + GET)', () => {
       expect(res.data.byteLength).toBe(3);
     });
 
+    it('devuelve un Blob con responseType "blob"', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () => new Response('abc', { status: 200 }));
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const res = await client.get<Blob>('https://api.x.com/archivo', { responseType: 'blob' });
+      expect(res.data).toBeInstanceOf(Blob);
+      expect(res.data.size).toBe(3);
+    });
+
+    it('devuelve un FormData con responseType "formData"', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () =>
+        new Response('a=1&b=2', {
+          status: 200,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        }),
+      );
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const res = await client.get<FormData>('https://api.x.com/form', { responseType: 'formData' });
+      expect(res.data).toBeInstanceOf(FormData);
+      expect(res.data.get('a')).toBe('1');
+      expect(res.data.get('b')).toBe('2');
+    });
+
     it('devuelve null cuando el cuerpo está vacío (p. ej. 204)', async () => {
       const fetchMock = jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
       const client = new SmartFetch({}, { fetch: fetchMock });
@@ -88,6 +112,130 @@ describe('SmartFetch (núcleo + GET)', () => {
       const res = await client.get('https://api.x.com/nada');
       expect(res.status).toBe(204);
       expect(res.data).toBeNull();
+    });
+
+    it('normaliza a null un 204 para cualquier responseType (text, blob)', async () => {
+      const textMock = jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
+      const textClient = new SmartFetch({}, { fetch: textMock });
+      const textRes = await textClient.get('https://api.x.com/nada', { responseType: 'text' });
+      expect(textRes.data).toBeNull();
+
+      const blobMock = jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
+      const blobClient = new SmartFetch({}, { fetch: blobMock });
+      const blobRes = await blobClient.get('https://api.x.com/nada', { responseType: 'blob' });
+      expect(blobRes.data).toBeNull();
+    });
+  });
+
+  describe('normalización de parseo y errores', () => {
+    it('lanza ParseError ante un JSON malformado en una respuesta 2xx', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () =>
+        new Response('{no-json', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      expect.assertions(5);
+      try {
+        await client.get('https://api.x.com/roto');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ParseError);
+        const parseError = error as ParseError;
+        expect(parseError.isParse()).toBe(true);
+        expect(parseError.responseType).toBe('json');
+        expect(parseError.cause).toBeInstanceOf(SyntaxError);
+        expect(parseError.text).toBe('{no-json');
+      }
+    });
+
+    it('prioriza HttpError sobre el parseo cuando un 5xx trae un cuerpo malformado', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () =>
+        new Response('<html>500</html>', {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      expect.assertions(3);
+      try {
+        await client.get('https://api.x.com/error');
+      } catch (error) {
+        expect(error).toBeInstanceOf(HttpError);
+        const httpError = error as HttpError;
+        expect(httpError.status).toBe(500);
+        expect(httpError.response?.data).toBe('<html>500</html>');
+      }
+    });
+
+    it('adjunta el cuerpo crudo como data en un 404 con JSON malformado', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () =>
+        new Response('oops', {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      expect.assertions(2);
+      try {
+        await client.get('https://api.x.com/noexiste');
+      } catch (error) {
+        expect(error).toBeInstanceOf(HttpError);
+        expect((error as HttpError).response?.data).toBe('oops');
+      }
+    });
+  });
+
+  describe('validateStatus', () => {
+    it('acepta un estado no-2xx cuando validateStatus lo aprueba', async () => {
+      const fetchMock = jsonAdapter({ cacheado: true }, { status: 404 });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const res = await client.get('https://api.x.com/x', { validateStatus: () => true });
+      expect(res.status).toBe(404);
+      expect(res.data).toEqual({ cacheado: true });
+    });
+
+    it('rechaza con HttpError un estado 2xx cuando validateStatus no lo aprueba', async () => {
+      const fetchMock = jsonAdapter({ ok: true }, { status: 200 });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      expect.assertions(2);
+      try {
+        await client.get('https://api.x.com/x', { validateStatus: (status) => status === 201 });
+      } catch (error) {
+        expect(error).toBeInstanceOf(HttpError);
+        expect((error as HttpError).status).toBe(200);
+      }
+    });
+  });
+
+  describe('estilos async/await y Promesas', () => {
+    it('resuelve con el estilo de promesas (.then)', () => {
+      const fetchMock = jsonAdapter({ id: 7 });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      return client.get<{ id: number }>('https://api.x.com/u/7').then((res) => {
+        expect(res.data).toEqual({ id: 7 });
+        expect(res.status).toBe(200);
+      });
+    });
+
+    it('propaga el rechazo por el manejador de error del .then', () => {
+      const fetchMock = jsonAdapter({ mensaje: 'no encontrado' }, { status: 404 });
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      return client.get('https://api.x.com/u/999').then(
+        () => {
+          throw new Error('no debía resolver');
+        },
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(HttpError);
+        },
+      );
     });
   });
 

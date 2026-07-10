@@ -25,8 +25,9 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
  * - `text`: devuelve la respuesta como texto plano.
  * - `blob`: devuelve la respuesta como un {@link Blob} (datos binarios).
  * - `arrayBuffer`: devuelve la respuesta como un {@link ArrayBuffer}.
+ * - `formData`: devuelve la respuesta como un {@link FormData} (formularios).
  */
-export type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer';
+export type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer' | 'formData';
 
 /**
  * Valor admitido para un parámetro de consulta (query string).
@@ -125,6 +126,18 @@ export interface RequestConfig {
 
   /** Formato en el que se interpretará el cuerpo de la respuesta. Por defecto `json`. */
   responseType?: ResponseType;
+
+  /**
+   * Función que decide qué códigos de estado HTTP se consideran satisfactorios.
+   * Recibe el código de estado y devuelve `true` para aceptarlo (resolver la
+   * promesa) o `false` para rechazarlo con un {@link HttpError}. Si se omite, se
+   * aceptan únicamente los códigos del rango 2xx (equivalente a `Response.ok`).
+   *
+   * @example
+   * // Tratar también 304 (Not Modified) como éxito:
+   * validateStatus: (status) => (status >= 200 && status < 300) || status === 304
+   */
+  validateStatus?: (status: number) => boolean;
 
   /**
    * Señal de aborto externa para permitir que quien consume la librería pueda

@@ -11,7 +11,7 @@ e interceptores.
 ## Uso
 
 ```ts
-import { SmartFetch, HttpError } from 'smartfetch';
+import { SmartFetch, HttpError, ParseError } from 'smartfetch';
 
 const client = new SmartFetch({ baseURL: 'https://api.ejemplo.com' });
 
@@ -28,20 +28,41 @@ await client.patch<Usuario>('/usuarios/1', { activo: false });
 // DELETE no recibe cuerpo posicional.
 await client.delete('/usuarios/1');
 
-// Errores controlados: HTTP (4xx/5xx) y de red.
+// Errores controlados: HTTP (4xx/5xx), de red y de parseo del cuerpo.
 try {
   await client.get('/usuarios/999');
 } catch (error) {
   if (error instanceof HttpError) {
     console.error('HTTP', error.status, error.response?.data);
+  } else if (error instanceof ParseError) {
+    // El cuerpo de una respuesta satisfactoria no era JSON válido.
+    console.error('Parseo', error.responseType, error.text);
   }
 }
 ```
 
 La respuesta es un `SmartFetchResponse<T>` con `data`, `status`, `statusText`, `headers`, `ok`,
 `url`, `config` y `raw` (el `Response` nativo). Por defecto el cuerpo se parsea como JSON; puede
-cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer'`. El `fetch` subyacente es inyectable
+cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer' | 'formData'`. Los estados sin cuerpo
+(204/205/304) devuelven `data === null` en cualquier formato. El `fetch` subyacente es inyectable
 (`new SmartFetch(defaults, { fetch })`) siguiendo el patrón Adapter.
+
+### Parseo y normalización de errores
+
+Un cuerpo ilegible en el formato solicitado (p. ej. JSON malformado) en una respuesta **aceptada**
+lanza un `ParseError` (con `responseType`, el `text` crudo y la `cause` original). En una respuesta
+**de error**, en cambio, prevalece el `HttpError` y el cuerpo crudo queda disponible en
+`error.response?.data`, para no ocultar el fallo HTTP tras un problema de parseo.
+
+Por defecto solo el rango **2xx** se considera satisfactorio; puede redefinirse por petición con
+`validateStatus`, que decide qué códigos se aceptan (resuelven) y cuáles se rechazan con `HttpError`:
+
+```ts
+// Aceptar también 304 (Not Modified) como éxito.
+await client.get('/recurso', {
+  validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
+});
+```
 
 ### Interceptores (Programación Orientada a Aspectos)
 
@@ -82,6 +103,7 @@ en orden de registro (FIFO), igual que en `axios`.
 - 🔁 **Reintentos** automáticos ante errores 5xx o de red (configurable, por defecto un solo intento).
 - 🌐 Métodos **GET, POST, PUT, PATCH, DELETE**.
 - 🔗 **Interceptores** de petición y respuesta (Programación Orientada a Aspectos).
+- 🧩 **Parseo** configurable (`json`/`text`/`blob`/`arrayBuffer`/`formData`) con `ParseError` y `validateStatus`.
 - 🧱 Cero dependencias de runtime.
 - 📦 Compatible con **async/await** y **Promesas**.
 

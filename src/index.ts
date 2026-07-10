@@ -42,6 +42,7 @@ export {
   TimeoutError,
   NetworkError,
   HttpError,
+  ParseError,
 } from './errors.js';
 
 export type {
@@ -50,4 +51,5 @@ export type {
   TimeoutErrorOptions,
   NetworkErrorOptions,
   HttpErrorOptions,
+  ParseErrorOptions,
 } from './errors.js';

@@ -3,6 +3,7 @@ import {
   TimeoutError,
   NetworkError,
   HttpError,
+  ParseError,
 } from '../src/errors.js';
 import type { RequestConfig, SmartFetchResponse } from '../src/types.js';
 
@@ -105,6 +106,44 @@ describe('modelo de errores', () => {
       } as SmartFetchResponse;
       const error = new HttpError(404, 'Not Found', { config, response });
       expect(error.response).toBe(response);
+    });
+  });
+
+  describe('ParseError', () => {
+    it('hereda de SmartFetchError y tiene la categoría "parse"', () => {
+      const error = new ParseError('no se pudo parsear', { config });
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(SmartFetchError);
+      expect(error).toBeInstanceOf(ParseError);
+      expect(error.type).toBe('parse');
+      expect(error.name).toBe('ParseError');
+      expect(error.message).toMatch(/pars/i);
+    });
+
+    it('isParse() devuelve true y los demás guards false', () => {
+      const error = new ParseError('x');
+      expect(error.isParse()).toBe(true);
+      expect(error.isHttp()).toBe(false);
+      expect(error.isNetwork()).toBe(false);
+      expect(error.isTimeout()).toBe(false);
+    });
+
+    it('almacena responseType, texto crudo, causa y configuración', () => {
+      const cause = new SyntaxError('Unexpected token');
+      const error = new ParseError('JSON inválido', {
+        config,
+        cause,
+        responseType: 'json',
+        text: '{roto',
+      });
+      expect(error.responseType).toBe('json');
+      expect(error.text).toBe('{roto');
+      expect(error.cause).toBe(cause);
+      expect(error.config).toBe(config);
+    });
+
+    it('usa responseType "json" por defecto', () => {
+      expect(new ParseError('x').responseType).toBe('json');
     });
   });
 });
