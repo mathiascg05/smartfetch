@@ -47,6 +47,34 @@ cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer' | 'formData'`. Los 
 (204/205/304) devuelven `data === null` en cualquier formato. El `fetch` subyacente es inyectable
 (`new SmartFetch(defaults, { fetch })`) siguiendo el patrón Adapter.
 
+### Creación de clientes
+
+Además de `new SmartFetch(...)`, la librería ofrece dos formas de crear clientes y una instancia
+lista para usar:
+
+```ts
+import smartfetch, { createClient, SmartFetchBuilder, ExponentialBackoff } from 'smartfetch';
+
+// 1) Factory: crea un cliente sin usar `new`.
+const api = createClient({ baseURL: 'https://api.ejemplo.com', timeout: 5000 });
+
+// 2) Builder: compone la configuración paso a paso (fluent API).
+const api2 = new SmartFetchBuilder()
+  .baseURL('https://api.ejemplo.com')
+  .header('Authorization', 'Bearer token')
+  .timeout(5000)
+  .retries(2)
+  .backoff(new ExponentialBackoff())
+  .build();
+
+// 3) Singleton: instancia por defecto (default export) para llamadas rápidas.
+const { data } = await smartfetch.get('https://api.ejemplo.com/estado');
+```
+
+`createClient` (patrón **Factory**) y `SmartFetchBuilder` (patrón **Builder**) producen ambos una
+instancia de `SmartFetch`; el `default export` `smartfetch` es un cliente por defecto (patrón
+**Singleton**) sin configuración base, útil para peticiones puntuales con URLs absolutas.
+
 ### Parseo y normalización de errores
 
 Un cuerpo ilegible en el formato solicitado (p. ej. JSON malformado) en una respuesta **aceptada**
@@ -104,6 +132,7 @@ en orden de registro (FIFO), igual que en `axios`.
 - 🌐 Métodos **GET, POST, PUT, PATCH, DELETE**.
 - 🔗 **Interceptores** de petición y respuesta (Programación Orientada a Aspectos).
 - 🧩 **Parseo** configurable (`json`/`text`/`blob`/`arrayBuffer`/`formData`) con `ParseError` y `validateStatus`.
+- 🏭 **Factory** (`createClient`), **Builder** (`SmartFetchBuilder`) e instancia por defecto (**Singleton**).
 - 🧱 Cero dependencias de runtime.
 - 📦 Compatible con **async/await** y **Promesas**.
 

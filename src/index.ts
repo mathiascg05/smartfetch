@@ -14,6 +14,22 @@ export const VERSION = '0.1.0';
 // Cliente HTTP (núcleo de la librería).
 export { SmartFetch } from './client.js';
 
+// Creación de clientes: Factory (createClient) + Builder (SmartFetchBuilder).
+import { createClient } from './factory.js';
+export { createClient, SmartFetchBuilder } from './factory.js';
+
+/**
+ * Instancia por defecto lista para usar (patrón Singleton).
+ *
+ * Permite hacer peticiones sin construir un cliente explícito. Para configurar
+ * `baseURL`, cabeceras, timeout o reintentos, crea un cliente propio con
+ * {@link createClient} o {@link SmartFetchBuilder}.
+ */
+export const smartfetch = createClient();
+
+// Export por defecto: `import sf from 'smartfetch'` usa el Singleton anterior.
+export default smartfetch;
+
 // Estrategias de backoff para reintentos (patrón Strategy).
 export { FixedBackoff, ExponentialBackoff } from './retry/backoff.js';
 export type { BackoffStrategy } from './retry/backoff.js';
