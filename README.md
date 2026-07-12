@@ -2,13 +2,61 @@
 
 Wrapper avanzado y resiliente sobre la API nativa **`fetch`**, escrito en **TypeScript** y
 **sin dependencias de terceros**. Ofrece una interfaz limpia y de alto nivel (estilo `axios`)
-usando `fetch` por debajo: timeout configurable, reintentos automáticos, métodos HTTP completos
-e interceptores.
+apoyándose en `fetch` por debajo: timeout configurable, reintentos automáticos con estrategias
+de espera, métodos HTTP completos, interceptores y un modelo de errores tipado.
 
-> 🚧 En desarrollo. La documentación completa de instalación y uso se irá completando en los
-> próximos commits (ver el plan del proyecto).
+> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18** · **ESM + CJS** · async/await y Promesas
 
-## Uso
+## Índice
+
+- [Instalación](#instalación)
+- [Uso rápido](#uso-rápido)
+- [Creación de clientes](#creación-de-clientes)
+- [Timeout](#timeout)
+- [Reintentos y backoff](#reintentos-y-backoff)
+- [Parseo y `validateStatus`](#parseo-y-validatestatus)
+- [Interceptores (AOP)](#interceptores-programación-orientada-a-aspectos)
+- [Referencia de configuración](#referencia-de-configuración)
+- [Respuesta y errores](#respuesta-y-errores)
+- [Patrones de diseño](#patrones-de-diseño)
+- [Proyecto académico](#proyecto-académico)
+- [Licencia](#licencia)
+
+## Instalación
+
+SmartFetch usa `fetch` nativo, por lo que requiere **Node.js ≥ 18** (o cualquier runtime moderno
+con `fetch` global). La librería aún no se publica en el registro de npm; se instala directamente
+desde GitHub:
+
+```bash
+# Instalar desde el repositorio (rama por defecto)
+npm install github:mathiascg05/smartfetch
+```
+
+Alternativamente, empaquetar y luego instalar el tarball generado:
+
+```bash
+git clone https://github.com/mathiascg05/smartfetch.git
+cd smartfetch
+npm install
+npm run build      # genera dist/ (ESM + CJS + tipos)
+npm pack           # crea smartfetch-<version>.tgz
+# en tu proyecto:
+npm install /ruta/a/smartfetch-<version>.tgz
+```
+
+El paquete expone **ESM** (`dist/index.js`), **CommonJS** (`dist/index.cjs`) y declaraciones de
+tipos (`dist/index.d.ts`), así que funciona tanto con `import` como con `require`:
+
+```ts
+import smartfetch, { SmartFetch } from 'smartfetch';   // ESM / TypeScript
+```
+
+```js
+const { SmartFetch } = require('smartfetch');           // CommonJS
+```
+
+## Uso rápido
 
 ```ts
 import { SmartFetch, HttpError, ParseError } from 'smartfetch';
@@ -41,13 +89,23 @@ try {
 }
 ```
 
+Cada método devuelve una **`Promise`**, así que funcionan por igual `async/await` y las cadenas
+`.then()`/`.catch()`:
+
+```ts
+client
+  .get<Usuario[]>('/usuarios')
+  .then((res) => console.log(res.data))
+  .catch((err) => console.error(err));
+```
+
 La respuesta es un `SmartFetchResponse<T>` con `data`, `status`, `statusText`, `headers`, `ok`,
 `url`, `config` y `raw` (el `Response` nativo). Por defecto el cuerpo se parsea como JSON; puede
 cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer' | 'formData'`. Los estados sin cuerpo
 (204/205/304) devuelven `data === null` en cualquier formato. El `fetch` subyacente es inyectable
 (`new SmartFetch(defaults, { fetch })`) siguiendo el patrón Adapter.
 
-### Creación de clientes
+## Creación de clientes
 
 Además de `new SmartFetch(...)`, la librería ofrece dos formas de crear clientes y una instancia
 lista para usar:
@@ -75,7 +133,68 @@ const { data } = await smartfetch.get('https://api.ejemplo.com/estado');
 instancia de `SmartFetch`; el `default export` `smartfetch` es un cliente por defecto (patrón
 **Singleton**) sin configuración base, útil para peticiones puntuales con URLs absolutas.
 
-### Parseo y normalización de errores
+## Timeout
+
+`timeout` (en milisegundos) cancela la petición y lanza un `TimeoutError` si el servidor no
+responde a tiempo. La cancelación se implementa internamente con `AbortController`. Un valor de
+`0` o su omisión significan **sin límite de tiempo**.
+
+```ts
+import { TimeoutError } from 'smartfetch';
+
+try {
+  await client.get('/lento', { timeout: 2000 }); // aborta a los 2 s
+} catch (error) {
+  if (error instanceof TimeoutError) {
+    console.error(`La petición superó los ${error.timeout} ms`);
+  }
+}
+```
+
+Si pasas tu propia `signal` (`AbortSignal`), se combina con el timeout interno: aborta lo que
+ocurra primero. Un aborto externo se propaga tal cual (no se traduce a `TimeoutError`).
+
+## Reintentos y backoff
+
+SmartFetch reintenta automáticamente las peticiones que fallan de forma **transitoria**. Por
+defecto `retries: 0` (un solo intento, como exige el enunciado). La política por defecto
+reintenta **solo** ante:
+
+- errores de red (`NetworkError`), y
+- respuestas HTTP **5xx** (`HttpError` con `status` 500–599).
+
+**No** reintenta ante timeouts, errores 4xx ni errores de parseo (`ParseError`).
+
+```ts
+import { SmartFetch, FixedBackoff, ExponentialBackoff } from 'smartfetch';
+
+// 2 reintentos (3 intentos en total) con espera exponencial: 100 ms, 200 ms, 400 ms...
+const client = new SmartFetch({
+  baseURL: 'https://api.ejemplo.com',
+  retries: 2,
+  backoff: new ExponentialBackoff(100),   // baseMs = 100, maxMs = Infinity
+});
+
+// Espera fija entre reintentos (patrón Strategy intercambiable).
+const otro = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
+```
+
+La estrategia de espera es un **Strategy** intercambiable (`BackoffStrategy`):
+`FixedBackoff(delayMs = 0)` y `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. La espera de
+backoff es cancelable por la `signal` externa.
+
+Para políticas a medida, `retryOn` reemplaza la decisión por defecto:
+
+```ts
+// Reintentar también en 429 (Too Many Requests), hasta 4 intentos.
+await client.get('/recurso', {
+  retries: 3,
+  retryOn: (error, attempt) =>
+    error instanceof HttpError && (error.status === 429 || error.status >= 500),
+});
+```
+
+## Parseo y `validateStatus`
 
 Un cuerpo ilegible en el formato solicitado (p. ej. JSON malformado) en una respuesta **aceptada**
 lanza un `ParseError` (con `responseType`, el `text` crudo y la `cause` original). En una respuesta
@@ -92,7 +211,7 @@ await client.get('/recurso', {
 });
 ```
 
-### Interceptores (Programación Orientada a Aspectos)
+## Interceptores (Programación Orientada a Aspectos)
 
 Los interceptores permiten tratar de forma centralizada preocupaciones transversales —logging,
 autenticación, transformación de datos o recuperación de errores— sin tocar el núcleo del cliente.
@@ -125,16 +244,79 @@ client.interceptors.request.eject(authId);
 Los interceptores de petición se ejecutan en orden inverso al de registro (LIFO) y los de respuesta
 en orden de registro (FIFO), igual que en `axios`.
 
-## Características previstas
+## Referencia de configuración
 
-- ⏱️ **Timeout** configurable por petición (cancelación automática vía `AbortController`).
-- 🔁 **Reintentos** automáticos ante errores 5xx o de red (configurable, por defecto un solo intento).
-- 🌐 Métodos **GET, POST, PUT, PATCH, DELETE**.
-- 🔗 **Interceptores** de petición y respuesta (Programación Orientada a Aspectos).
-- 🧩 **Parseo** configurable (`json`/`text`/`blob`/`arrayBuffer`/`formData`) con `ParseError` y `validateStatus`.
-- 🏭 **Factory** (`createClient`), **Builder** (`SmartFetchBuilder`) e instancia por defecto (**Singleton**).
-- 🧱 Cero dependencias de runtime.
-- 📦 Compatible con **async/await** y **Promesas**.
+`RequestConfig` (todos los campos son opcionales). Se puede pasar como configuración por defecto
+del cliente y/o por petición; los valores de la petición se fusionan sobre los del cliente.
+
+| Opción | Tipo | Descripción |
+|---|---|---|
+| `baseURL` | `string` | URL base a la que se resuelven las rutas relativas. |
+| `url` | `string` | Ruta o URL de la petición (normalmente va como 1er argumento del método). |
+| `method` | `HttpMethod` | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`. |
+| `headers` | `Record<string, string>` | Cabeceras HTTP. |
+| `params` | `QueryParams` | Parámetros de consulta (se serializan a query string; admite arrays). |
+| `body` | `unknown` | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`. |
+| `timeout` | `number` | Milisegundos antes de abortar (`0`/omitido = sin límite). |
+| `retries` | `number` | Reintentos ante fallo transitorio (default `0` = un intento). |
+| `backoff` | `BackoffStrategy` | Estrategia de espera entre reintentos (Strategy). |
+| `retryOn` | `RetryPredicate` | Predicado `(error, attempt) => boolean` que sustituye la política por defecto. |
+| `responseType` | `ResponseType` | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`. |
+| `validateStatus` | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx). |
+| `signal` | `AbortSignal` | Señal externa para cancelar la petición. |
+
+El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
+`new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+## Respuesta y errores
+
+Cada método resuelve con un `SmartFetchResponse<T>`:
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `data` | `T` | Cuerpo ya parseado según `responseType` (`null` en 204/205/304). |
+| `status` | `number` | Código de estado HTTP. |
+| `statusText` | `string` | Texto del estado. |
+| `headers` | `Record<string, string>` | Cabeceras de la respuesta. |
+| `ok` | `boolean` | `true` si el estado se consideró satisfactorio. |
+| `url` | `string` | URL final de la petición. |
+| `config` | `RequestConfig` | Configuración efectiva usada. |
+| `raw` | `Response` | El `Response` nativo sin procesar. |
+
+Los fallos se normalizan a una jerarquía de errores tipada. Todos extienden `SmartFetchError`,
+que expone el discriminador `type` y guards para estrechar el tipo:
+
+| Error | `type` | Guard | Campos propios |
+|---|---|---|---|
+| `TimeoutError` | `'timeout'` | `isTimeout()` | `timeout` |
+| `NetworkError` | `'network'` | `isNetwork()` | — |
+| `HttpError` | `'http'` | `isHttp()` | `status`, `statusText`, `response?` |
+| `ParseError` | `'parse'` | `isParse()` | `responseType`, `text?` |
+
+```ts
+try {
+  await client.get('/recurso');
+} catch (e) {
+  if (e instanceof SmartFetchError) {
+    switch (e.type) {
+      case 'http':    /* e.status, e.response?.data */ break;
+      case 'timeout': /* e.timeout */ break;
+      case 'network': /* fallo de conexión */ break;
+      case 'parse':   /* e.responseType, e.text */ break;
+    }
+  }
+}
+```
+
+Todos comparten además `config` (la petición que falló) y `cause` (el error original, si lo hubo).
+
+## Patrones de diseño
+
+- **Adapter** — el cliente envuelve `fetch` nativo tras una interfaz propia e inyectable.
+- **Strategy** — `FixedBackoff` / `ExponentialBackoff`: espera entre reintentos intercambiable.
+- **Factory / Builder** — `createClient()` y `SmartFetchBuilder` para construir clientes.
+- **Singleton** — instancia por defecto exportada (`import smartfetch from 'smartfetch'`).
+- **Interceptores (AOP)** — hooks de petición/respuesta para preocupaciones transversales.
 
 ## Proyecto académico
 
