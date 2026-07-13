@@ -16,7 +16,7 @@
  */
 
 /** Versión actual de la librería. */
-export const VERSION = '0.1.0';
+export const VERSION = '1.0.0';
 
 // Cliente HTTP (núcleo de la librería).
 export { SmartFetch } from './client.js';
