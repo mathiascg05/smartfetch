@@ -1,9 +1,16 @@
 /**
  * SmartFetch — wrapper avanzado y resiliente sobre la API nativa `fetch`.
  *
- * Punto de entrada público de la librería. A medida que avance el desarrollo,
- * aquí se re-exportarán el cliente, los tipos, los errores, los interceptores
- * y la instancia por defecto (Singleton).
+ * Punto de entrada público de la librería. Re-exporta toda la superficie
+ * pública:
+ *
+ * - El cliente {@link SmartFetch} y sus fábricas ({@link createClient},
+ *   {@link SmartFetchBuilder}) más la instancia por defecto {@link smartfetch}
+ *   (Singleton, también export por defecto).
+ * - Las estrategias de backoff para reintentos ({@link FixedBackoff},
+ *   {@link ExponentialBackoff}) y el {@link InterceptorManager} (AOP).
+ * - Los contratos de configuración/respuesta y el modelo de errores controlados
+ *   ({@link SmartFetchError} y sus subtipos).
  *
  * @packageDocumentation
  */
