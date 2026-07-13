@@ -7,6 +7,8 @@ import { VERSION } from '../src/index.js';
 describe('scaffolding', () => {
   it('expone la versión de la librería', () => {
     expect(typeof VERSION).toBe('string');
-    expect(VERSION).toBe('0.1.0');
+    // Se valida el formato semver en lugar de una versión concreta, para que la
+    // prueba no haya que tocarla en cada release.
+    expect(VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
