@@ -1,6 +1,6 @@
 {
   "name": "smartfetch",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Wrapper avanzado y resiliente sobre la API nativa fetch, sin dependencias de terceros.",
   "keywords": [
     "fetch",

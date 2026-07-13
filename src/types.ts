@@ -1,0 +1,207 @@
+/**
+ * Definiciones de tipos públicos de SmartFetch.
+ *
+ * Este módulo concentra los contratos (interfaces y tipos) que describen cómo
+ * se configura una petición y qué forma tiene la respuesta. Al estar separados
+ * de la implementación, otros desarrolladores pueden importarlos para tipar su
+ * propio código sin acoplarse a los detalles internos de la librería.
+ *
+ * @module types
+ */
+
+import type { BackoffStrategy } from './retry/backoff.js';
+
+/**
+ * Métodos HTTP soportados por el cliente.
+ *
+ * El proyecto exige, como mínimo, los métodos GET, POST, PUT, PATCH y DELETE.
+ */
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+/**
+ * Formato en el que se desea interpretar el cuerpo de la respuesta.
+ *
+ * - `json`: parsea la respuesta como JSON (valor por defecto).
+ * - `text`: devuelve la respuesta como texto plano.
+ * - `blob`: devuelve la respuesta como un {@link Blob} (datos binarios).
+ * - `arrayBuffer`: devuelve la respuesta como un {@link ArrayBuffer}.
+ * - `formData`: devuelve la respuesta como un {@link FormData} (formularios).
+ */
+export type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer' | 'formData';
+
+/**
+ * Valor admitido para un parámetro de consulta (query string).
+ *
+ * Los valores `null` y `undefined` se omiten al construir la URL final.
+ */
+export type QueryParamValue = string | number | boolean | null | undefined;
+
+/**
+ * Conjunto de parámetros de consulta que se anexan a la URL.
+ *
+ * Cada clave puede ser un valor simple o un arreglo de valores; en el segundo
+ * caso se genera una entrada repetida por cada elemento del arreglo.
+ *
+ * @example
+ * // { page: 2, tags: ['a', 'b'] }  ->  "?page=2&tags=a&tags=b"
+ */
+export type QueryParams = Record<string, QueryParamValue | QueryParamValue[]>;
+
+/**
+ * Cabeceras HTTP representadas como pares clave/valor de texto.
+ */
+export type HeadersInit = Record<string, string>;
+
+/**
+ * Predicado que decide, ante un error, si una petición fallida debe reintentarse.
+ *
+ * Recibe el error capturado y el número de reintento que se realizaría (1-based)
+ * y devuelve `true` para reintentar o `false` para propagar el error. Permite
+ * personalizar la política de reintentos vía {@link RequestConfig.retryOn}; si no
+ * se provee, la librería reintenta ante errores de red y respuestas HTTP 5xx.
+ *
+ * @param error - Error capturado en el intento fallido.
+ * @param attempt - Número de reintento que se realizaría (empezando en `1`).
+ * @returns `true` si debe reintentarse; `false` para propagar el error.
+ */
+export type RetryPredicate = (error: unknown, attempt: number) => boolean;
+
+/**
+ * Configuración de una petición HTTP.
+ *
+ * Todas las propiedades son opcionales: pueden definirse al crear el cliente
+ * (como valores por defecto) y/o al realizar cada petición individual, donde
+ * sobrescriben a los valores por defecto.
+ */
+export interface RequestConfig {
+  /**
+   * URL base que se antepone a la ruta de cada petición.
+   * @example "https://api.ejemplo.com/v1"
+   */
+  baseURL?: string;
+
+  /** Ruta o URL del recurso solicitado (relativa a {@link RequestConfig.baseURL} o absoluta). */
+  url?: string;
+
+  /** Método HTTP a utilizar. Por defecto `GET`. */
+  method?: HttpMethod;
+
+  /** Cabeceras HTTP a enviar con la petición. */
+  headers?: HeadersInit;
+
+  /** Parámetros de consulta a anexar a la URL. */
+  params?: QueryParams;
+
+  /**
+   * Cuerpo de la petición. Si es un objeto plano se serializa como JSON;
+   * los métodos `GET` y `DELETE` normalmente no lo utilizan.
+   */
+  body?: unknown;
+
+  /**
+   * Tiempo máximo de espera en milisegundos antes de cancelar la petición.
+   * Un valor de `0` o `undefined` significa "sin límite de tiempo".
+   */
+  timeout?: number;
+
+  /**
+   * Número de reintentos adicionales ante errores del servidor (5xx) o de red.
+   * Por defecto es `0`, es decir, la librería realiza un único intento.
+   */
+  retries?: number;
+
+  /**
+   * Estrategia de espera entre reintentos (patrón Strategy). Si se omite, los
+   * reintentos se realizan de inmediato, sin espera. Solo tiene efecto cuando
+   * {@link RequestConfig.retries} es mayor que `0`.
+   */
+  backoff?: BackoffStrategy;
+
+  /**
+   * Predicado que decide, ante un error, si la petición debe reintentarse. Si se
+   * omite, la política por defecto reintenta ante errores de red y respuestas
+   * HTTP 5xx, pero nunca ante timeouts ni errores de cliente (4xx).
+   */
+  retryOn?: RetryPredicate;
+
+  /** Formato en el que se interpretará el cuerpo de la respuesta. Por defecto `json`. */
+  responseType?: ResponseType;
+
+  /**
+   * Función que decide qué códigos de estado HTTP se consideran satisfactorios.
+   * Recibe el código de estado y devuelve `true` para aceptarlo (resolver la
+   * promesa) o `false` para rechazarlo con un {@link HttpError}. Si se omite, se
+   * aceptan únicamente los códigos del rango 2xx (equivalente a `Response.ok`).
+   *
+   * @example
+   * // Tratar también 304 (Not Modified) como éxito:
+   * validateStatus: (status) => (status >= 200 && status < 300) || status === 304
+   */
+  validateStatus?: (status: number) => boolean;
+
+  /**
+   * Señal de aborto externa para permitir que quien consume la librería pueda
+   * cancelar manualmente la petición, además del control por `timeout`.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * Respuesta normalizada que devuelve SmartFetch tras una petición exitosa.
+ *
+ * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
+ */
+export interface SmartFetchResponse<T = unknown> {
+  /** Cuerpo de la respuesta ya parseado según {@link RequestConfig.responseType}. */
+  data: T;
+
+  /** Código de estado HTTP (por ejemplo, `200`). */
+  status: number;
+
+  /** Texto descriptivo del estado HTTP (por ejemplo, `"OK"`). */
+  statusText: string;
+
+  /** Cabeceras de la respuesta como pares clave/valor. */
+  headers: Record<string, string>;
+
+  /** `true` si el código de estado está en el rango 2xx. */
+  ok: boolean;
+
+  /** URL final desde la que se obtuvo la respuesta (tras redirecciones). */
+  url: string;
+
+  /** Configuración efectiva con la que se realizó la petición. */
+  config: RequestConfig;
+
+  /** Objeto {@link Response} nativo, por si se necesita acceso de bajo nivel. */
+  raw: Response;
+}
+
+/**
+ * Adaptador de bajo nivel que realiza la petición HTTP real.
+ *
+ * Abstrae la dependencia concreta de `fetch` (patrón Adapter): por defecto el
+ * cliente usa `globalThis.fetch`, pero puede inyectarse otra implementación
+ * compatible (por ejemplo, un `fetch` de prueba en los tests, o un polyfill).
+ *
+ * @param input - URL final ya construida de la petición.
+ * @param init - Opciones nativas de la petición (método, cabeceras, cuerpo, señal, etc.).
+ * @returns El {@link Response} nativo resultante.
+ */
+export type FetchAdapter = (input: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Opciones a nivel de cliente (no de una petición individual).
+ *
+ * Se pasan al construir una instancia de `SmartFetch` y configuran su
+ * comportamiento global, a diferencia de {@link RequestConfig}, que describe
+ * una petición concreta.
+ */
+export interface SmartFetchOptions {
+  /**
+   * Implementación de `fetch` a utilizar. Por defecto `globalThis.fetch`.
+   * Permite inyectar un adaptador propio (patrón Adapter) o mockear la red
+   * en los tests sin alterar el `fetch` global.
+   */
+  fetch?: FetchAdapter;
+}
