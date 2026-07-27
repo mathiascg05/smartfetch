@@ -45,7 +45,6 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "example": "tsx example.ts",
-    "lint": "eslint . --ext .ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
