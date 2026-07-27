@@ -458,6 +458,133 @@ describe('SmartFetch (núcleo + GET)', () => {
     });
   });
 
+  describe('cuerpos que fetch ya sabe manejar', () => {
+    /** Adaptador que captura el init recibido y responde 200 vacío. */
+    function capturaInit(): jest.Mock<FetchAdapter> {
+      return jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
+    }
+
+    it('no serializa ni toca un URLSearchParams', async () => {
+      const fetchMock = capturaInit();
+      const client = new SmartFetch({}, { fetch: fetchMock });
+      const body = new URLSearchParams({ a: '1' });
+
+      await client.post('https://api.x.com/x', body);
+
+      const init = fetchMock.mock.calls[0][1];
+      expect(init?.body).toBe(body);
+      // No debe inventarse un Content-Type: fetch lo deduce del tipo de cuerpo.
+      expect(new Headers(init?.headers).get('Content-Type')).toBeNull();
+    });
+
+    it('no serializa un Blob ni un vista de ArrayBuffer', async () => {
+      const fetchMock = capturaInit();
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const blob = new Blob(['hola']);
+      await client.post('https://api.x.com/x', blob);
+      expect(fetchMock.mock.calls[0][1]?.body).toBe(blob);
+
+      const bytes = new Uint8Array([1, 2, 3]);
+      await client.put('https://api.x.com/x', bytes);
+      expect(fetchMock.mock.calls[1][1]?.body).toBe(bytes);
+    });
+
+    it('serializa como JSON un objeto sin prototipo', async () => {
+      const fetchMock = capturaInit();
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      // Object.create(null) no hereda de Object.prototype, pero sigue siendo un
+      // objeto plano serializable.
+      const sinPrototipo = Object.create(null) as Record<string, unknown>;
+      sinPrototipo.nombre = 'Ada';
+
+      await client.post('https://api.x.com/x', sinPrototipo);
+
+      const init = fetchMock.mock.calls[0][1];
+      expect(init?.body).toBe('{"nombre":"Ada"}');
+      expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+    });
+
+    it('no serializa un FormData', async () => {
+      const fetchMock = capturaInit();
+      const client = new SmartFetch({}, { fetch: fetchMock });
+      const form = new FormData();
+      form.append('campo', 'valor');
+
+      await client.post('https://api.x.com/x', form);
+
+      expect(fetchMock.mock.calls[0][1]?.body).toBe(form);
+    });
+  });
+
+  describe('cuerpos vacíos y parseo de formData', () => {
+    it('devuelve null cuando el cuerpo está vacío en una respuesta 200', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () => new Response('', { status: 200 }));
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const res = await client.get('https://api.x.com/x');
+
+      expect(res.data).toBeNull();
+      expect(res.status).toBe(200);
+    });
+
+    it('lanza ParseError si el cuerpo de una respuesta aceptada no es formData', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () =>
+          new Response('{"no":"es form data"}', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      );
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await expect(
+        client.get('https://api.x.com/x', { responseType: 'formData' }),
+      ).rejects.toBeInstanceOf(ParseError);
+    });
+
+    it('tolera un formData ilegible en una respuesta de error y deja ganar al HttpError', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () =>
+          new Response('{"error":"roto"}', {
+            status: 500,
+            statusText: 'Server Error',
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      );
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      const error = await client
+        .get('https://api.x.com/x', { responseType: 'formData' })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).status).toBe(500);
+      expect((error as HttpError).response?.data).toBeNull();
+    });
+  });
+
+  describe('fusión de configuración', () => {
+    it('usa el método por defecto del cliente cuando la petición no indica ninguno', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
+      const client = new SmartFetch({ method: 'DELETE' }, { fetch: fetchMock });
+
+      await client.request({ url: 'https://api.x.com/x' });
+
+      expect(fetchMock.mock.calls[0][1]?.method).toBe('DELETE');
+    });
+
+    it('cae en GET cuando no hay método ni en la petición ni en los defaults', async () => {
+      const fetchMock = jest.fn<FetchAdapter>(async () => new Response(null, { status: 204 }));
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await client.request({ url: 'https://api.x.com/x' });
+
+      expect(fetchMock.mock.calls[0][1]?.method).toBe('GET');
+    });
+  });
+
   describe('configuración del cliente', () => {
     it('lanza SmartFetchError si no hay fetch disponible ni inyectado', () => {
       const original = globalThis.fetch;
