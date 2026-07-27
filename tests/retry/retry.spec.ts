@@ -141,3 +141,47 @@ describe('defaultShouldRetry', () => {
     expect(defaultShouldRetry(new Error('cualquier cosa'))).toBe(false);
   });
 });
+
+describe('withRetry: cancelación durante la espera del backoff', () => {
+  const always = () => true;
+
+  it('aborta la espera y propaga el motivo sin consumir otro intento', async () => {
+    const controller = new AbortController();
+    const operation = jest.fn(async () => {
+      throw new NetworkError('caída de red');
+    });
+
+    // Backoff largo: la espera solo puede terminar por el aborto, no por el plazo.
+    const promesa = withRetry(operation, {
+      retries: 3,
+      backoff: new FixedBackoff(10_000),
+      shouldRetry: always,
+      signal: controller.signal,
+    });
+
+    // Deja que el primer intento falle y que el motor entre en la espera.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const motivo = new Error('cancelado por quien llama');
+    controller.abort(motivo);
+
+    await expect(promesa).rejects.toBe(motivo);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it('no llega a esperar si la señal ya venía abortada', async () => {
+    const motivo = new Error('abortado de antemano');
+    const operation = jest.fn(async () => {
+      throw new NetworkError('caída de red');
+    });
+
+    const promesa = withRetry(operation, {
+      retries: 2,
+      backoff: new FixedBackoff(10_000),
+      shouldRetry: always,
+      signal: AbortSignal.abort(motivo),
+    });
+
+    await expect(promesa).rejects.toBe(motivo);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+});
