@@ -68,4 +68,21 @@ describe('buildURL', () => {
     });
     expect(url).toBe('https://api.x.com/items?page=1#seccion');
   });
+
+  it('devuelve la ruta tal cual cuando no hay baseURL', () => {
+    expect(buildURL({ url: '/usuarios' })).toBe('/usuarios');
+    expect(buildURL({ url: 'usuarios' })).toBe('usuarios');
+  });
+
+  it('devuelve cadena vacía cuando no hay ni baseURL ni ruta', () => {
+    expect(buildURL({})).toBe('');
+  });
+
+  it('no añade "?" cuando todos los parámetros se omiten', () => {
+    const url = buildURL({
+      url: 'https://api.x.com/items',
+      params: { a: null, b: undefined },
+    });
+    expect(url).toBe('https://api.x.com/items');
+  });
 });
