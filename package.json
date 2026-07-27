@@ -12,6 +12,18 @@
     "typescript"
   ],
   "license": "MIT",
+  "author": "Mathias Carstens <152658894+mathiascg05@users.noreply.github.com>",
+  "contributors": [
+    "sjrisquez <182248928+sjrisquez@users.noreply.github.com>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mathiascg05/smartfetch.git"
+  },
+  "homepage": "https://github.com/mathiascg05/smartfetch#readme",
+  "bugs": {
+    "url": "https://github.com/mathiascg05/smartfetch/issues"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -24,12 +36,15 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
+    "prepare": "npm run build",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "example": "tsx example.ts",
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc --noEmit"
   },
@@ -39,6 +54,7 @@
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
     "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "engines": {
