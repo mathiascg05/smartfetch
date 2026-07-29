@@ -14,6 +14,7 @@
  */
 
 import { CancelledError, HttpError, NetworkError } from '../errors.js';
+import { retryAfterDelay } from './retry-after.js';
 import type { RetryPredicate } from '../types.js';
 import type { BackoffStrategy } from './backoff.js';
 
@@ -32,16 +33,23 @@ export interface RetryOptions {
 
   /** External abort signal: if it fires during the wait, the retry is cancelled. */
   signal?: AbortSignal;
+
+  /**
+   * Upper bound applied to a `Retry-After` delay requested by the server.
+   * Defaults to {@link DEFAULT_MAX_RETRY_AFTER_MS}.
+   */
+  maxRetryAfterMs?: number;
 }
 
 /**
  * Default retry policy of the library.
  *
  * Retries only failures that are usually transient: network errors
- * ({@link NetworkError}) and server responses with a 5xx status
- * ({@link HttpError} whose `status` falls between 500 and 599). It does not retry
- * timeouts, cancellations, client (4xx) errors, request-construction errors or
- * unclassified failures.
+ * ({@link NetworkError}), server responses with a 5xx status ({@link HttpError}
+ * whose `status` falls between 500 and 599) and `429 Too Many Requests`, which is
+ * a rate limit rather than a client mistake and clears on its own. It does not
+ * retry timeouts, cancellations, other client (4xx) errors, request-construction
+ * errors or unclassified failures.
  *
  * @param error - Error captured on the failed attempt.
  * @returns `true` when the error counts as transient and is worth retrying.
@@ -52,7 +60,9 @@ export function defaultShouldRetry(error: unknown): boolean {
     return false;
   }
   if (error instanceof HttpError) {
-    return error.status >= 500 && error.status <= 599;
+    // 429 is a rate limit, not a client mistake: it is worth waiting out, and the
+    // server usually says how long through Retry-After.
+    return error.status === 429 || (error.status >= 500 && error.status <= 599);
   }
   return error instanceof NetworkError;
 }
@@ -137,7 +147,17 @@ export async function withRetry<T>(
         throw error;
       }
 
-      const wait = options.backoff?.delay(nextAttempt) ?? 0;
+      // A server that states how long to wait knows better than any client-side
+      // guess, so Retry-After takes precedence over the configured backoff.
+      const requested =
+        error instanceof HttpError
+          ? retryAfterDelay(
+              error.status,
+              error.response?.headers['retry-after'],
+              options.maxRetryAfterMs,
+            )
+          : null;
+      const wait = requested ?? options.backoff?.delay(nextAttempt) ?? 0;
       if (wait > 0) {
         await sleep(wait, options.signal);
       }

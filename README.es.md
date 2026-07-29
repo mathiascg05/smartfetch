@@ -190,6 +190,20 @@ backoff es cancelable por la `signal` externa.
 
 Para políticas a medida, `retryOn` reemplaza la decisión por defecto:
 
+### `Retry-After`
+
+Ante un **429** o un **503**, el servidor puede indicar cuánto esperar mediante la cabecera
+`Retry-After`, en segundos (`Retry-After: 120`) o como fecha HTTP. SmartFetch la respeta y le da
+**precedencia sobre el backoff configurado**: el servidor sabe mejor que el cliente cuándo estará
+listo.
+
+La espera se acota con `maxRetryAfterMs` (un minuto por defecto), para que un servidor que pida una
+hora no cuelgue la petición todo ese tiempo. Un valor ilegible cae al backoff configurado, y la
+cabecera se ignora en códigos donde no significa "espera".
+
+El `429` entra en la política de reintentos por defecto por el mismo motivo: es un límite de tasa
+que se resuelve solo, no un error de quien llama.
+
 ```ts
 // Reintentar también en 429 (Too Many Requests), hasta 4 intentos.
 await client.get('/recurso', {
@@ -254,22 +268,23 @@ en orden de registro (FIFO), igual que en `axios`.
 `RequestConfig` (todos los campos son opcionales). Se puede pasar como configuración por defecto
 del cliente y/o por petición; los valores de la petición se fusionan sobre los del cliente.
 
-| Opción           | Tipo                          | Descripción                                                                                                          |
-| ---------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `baseURL`        | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                  |
-| `url`            | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                            |
-| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                     |
-| `headers`        | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
-| `params`         | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
-| `body`           | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
-| `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite). Acota un único intento.                                    |
-| `totalTimeout`   | `number`                      | Milisegundos para la operación completa, esperas de backoff incluidas (`0`/omitido = sin límite global).             |
-| `retries`        | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento). Incompatible con un cuerpo de tipo stream — ver abajo. |
-| `backoff`        | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                    |
-| `retryOn`        | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                       |
-| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                 |
-| `validateStatus` | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                         |
-| `signal`         | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                             |
+| Opción            | Tipo                          | Descripción                                                                                                          |
+| ----------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `baseURL`         | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                  |
+| `url`             | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                            |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                     |
+| `headers`         | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
+| `params`          | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
+| `body`            | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
+| `timeout`         | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite). Acota un único intento.                                    |
+| `totalTimeout`    | `number`                      | Milisegundos para la operación completa, esperas de backoff incluidas (`0`/omitido = sin límite global).             |
+| `retries`         | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento). Incompatible con un cuerpo de tipo stream — ver abajo. |
+| `backoff`         | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                    |
+| `retryOn`         | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                       |
+| `maxRetryAfterMs` | `number`                      | Tope para la espera que pida el servidor vía `Retry-After` (default `60000`).                                        |
+| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                 |
+| `validateStatus`  | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                         |
+| `signal`          | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                             |
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
@@ -376,7 +391,6 @@ adoptarlo:
 - **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
   cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
   conservan en `response.setCookie`.
-- **No se respeta la cabecera `Retry-After`** en 429/503; siempre manda el backoff configurado.
 - **`ExponentialBackoff` no aplica jitter**, así que varios clientes concurrentes pueden reintentar
   sincronizados.
 - **Probado solo en Node ≥ 18.** El código es agnóstico al runtime y debería funcionar en

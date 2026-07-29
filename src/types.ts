@@ -130,10 +130,19 @@ export interface RequestConfig {
 
   /**
    * Predicate deciding whether a failed request should be retried. When omitted,
-   * the default policy retries network errors and HTTP 5xx responses, but never
-   * timeouts or client (4xx) errors.
+   * the default policy retries network errors, HTTP 5xx responses and 429, but
+   * never timeouts, cancellations or other client (4xx) errors.
    */
   retryOn?: RetryPredicate;
+
+  /**
+   * Upper bound, in milliseconds, applied to a delay the server asks for through
+   * the `Retry-After` header on a 429 or 503. Defaults to 60 000 (one minute).
+   *
+   * `Retry-After` takes precedence over {@link RequestConfig.backoff}; this cap
+   * keeps a server that asks for an hour from hanging the request that long.
+   */
+  maxRetryAfterMs?: number;
 
   /** Format the response body should be read as. Defaults to `json`. */
   responseType?: ResponseType;

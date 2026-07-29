@@ -414,6 +414,7 @@ export class SmartFetch {
         backoff: effective.backoff,
         shouldRetry: effective.retryOn ?? defaultShouldRetry,
         signal: effective.signal,
+        maxRetryAfterMs: effective.maxRetryAfterMs,
       },
     );
   }
