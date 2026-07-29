@@ -186,8 +186,13 @@ const other = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
 ```
 
 The wait strategy is an interchangeable **Strategy** (`BackoffStrategy`):
-`FixedBackoff(delayMs = 0)` and `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. The backoff
-wait is cancellable through the external `signal`.
+`FixedBackoff(delayMs = 0)` and `ExponentialBackoff(baseMs = 100, maxMs = Infinity, options)`. The
+backoff wait is cancellable through the external `signal`.
+
+`ExponentialBackoff` applies **jitter by default**, so clients that failed together do not retry
+together and repeat the load spike. It uses _equal jitter_: the delay lands in
+`[exponential / 2, exponential]`, which keeps a floor unlike full jitter. Disable it with
+`new ExponentialBackoff(100, Infinity, { jitter: false })` when a deterministic delay is needed.
 
 For custom policies, `retryOn` replaces the default decision:
 
@@ -392,7 +397,6 @@ before adopting it:
 - **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
   multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
   in `response.setCookie`.
-- **`ExponentialBackoff` applies no jitter**, so concurrent clients can retry in lockstep.
 - **Tested on Node ≥ 18 only.** The code is runtime-agnostic and should work in browsers and edge
   runtimes, but no browser test suite backs that claim.
 

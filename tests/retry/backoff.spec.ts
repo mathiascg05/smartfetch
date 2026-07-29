@@ -22,9 +22,18 @@ describe('FixedBackoff', () => {
   });
 });
 
+/**
+ * El jitter está activado por defecto, así que `delay()` no es determinista. Las
+ * pruebas del cálculo exponencial en sí lo desactivan; el comportamiento del
+ * jitter se cubre aparte, en `jitter.spec.ts`.
+ */
 describe('ExponentialBackoff', () => {
+  /** Backoff sin jitter, para poder asertar valores exactos. */
+  const sinJitter = (baseMs?: number, maxMs?: number) =>
+    new ExponentialBackoff(baseMs, maxMs, { jitter: false });
+
   it('duplica el retardo en cada reintento a partir de la base', () => {
-    const backoff = new ExponentialBackoff(100);
+    const backoff = sinJitter(100);
     expect(backoff.delay(1)).toBe(100);
     expect(backoff.delay(2)).toBe(200);
     expect(backoff.delay(3)).toBe(400);
@@ -32,13 +41,21 @@ describe('ExponentialBackoff', () => {
   });
 
   it('nunca supera el máximo configurado', () => {
-    const backoff = new ExponentialBackoff(100, 1000);
+    const backoff = sinJitter(100, 1000);
     expect(backoff.delay(4)).toBe(800);
     expect(backoff.delay(5)).toBe(1000); // 1600 acotado a 1000
     expect(backoff.delay(6)).toBe(1000);
   });
 
   it('usa 100 ms de base por defecto', () => {
-    expect(new ExponentialBackoff().delay(1)).toBe(100);
+    expect(sinJitter().delay(1)).toBe(100);
+  });
+
+  it('con jitter el retardo cae dentro del rango esperado', () => {
+    const backoff = new ExponentialBackoff(100);
+    const valor = backoff.delay(3); // exponencial = 400
+
+    expect(valor).toBeGreaterThanOrEqual(200);
+    expect(valor).toBeLessThanOrEqual(400);
   });
 });

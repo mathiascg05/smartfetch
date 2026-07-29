@@ -185,8 +185,14 @@ const otro = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
 ```
 
 La estrategia de espera es un **Strategy** intercambiable (`BackoffStrategy`):
-`FixedBackoff(delayMs = 0)` y `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. La espera de
-backoff es cancelable por la `signal` externa.
+`FixedBackoff(delayMs = 0)` y `ExponentialBackoff(baseMs = 100, maxMs = Infinity, options)`. La
+espera de backoff es cancelable por la `signal` externa.
+
+`ExponentialBackoff` aplica **jitter por defecto**, para que los clientes que fallaron a la vez no
+reintenten a la vez y repitan el pico de carga. Usa _equal jitter_: el retardo cae en
+`[exponencial / 2, exponencial]`, lo que conserva un suelo de espera a diferencia del full jitter.
+Se desactiva con `new ExponentialBackoff(100, Infinity, { jitter: false })` cuando se necesita un
+retardo determinista.
 
 Para políticas a medida, `retryOn` reemplaza la decisión por defecto:
 
@@ -391,8 +397,6 @@ adoptarlo:
 - **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
   cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
   conservan en `response.setCookie`.
-- **`ExponentialBackoff` no aplica jitter**, así que varios clientes concurrentes pueden reintentar
-  sincronizados.
 - **Probado solo en Node ≥ 18.** El código es agnóstico al runtime y debería funcionar en
   navegadores y edge runtimes, pero no hay una suite de pruebas de navegador que lo respalde.
 
