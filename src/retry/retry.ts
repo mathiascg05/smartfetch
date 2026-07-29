@@ -13,7 +13,8 @@
  * @module retry/retry
  */
 
-import { HttpError, NetworkError } from '../errors.js';
+import { CancelledError, HttpError, NetworkError } from '../errors.js';
+import { retryAfterDelay } from './retry-after.js';
 import type { RetryPredicate } from '../types.js';
 import type { BackoffStrategy } from './backoff.js';
 
@@ -32,23 +33,36 @@ export interface RetryOptions {
 
   /** External abort signal: if it fires during the wait, the retry is cancelled. */
   signal?: AbortSignal;
+
+  /**
+   * Upper bound applied to a `Retry-After` delay requested by the server.
+   * Defaults to {@link DEFAULT_MAX_RETRY_AFTER_MS}.
+   */
+  maxRetryAfterMs?: number;
 }
 
 /**
  * Default retry policy of the library.
  *
  * Retries only failures that are usually transient: network errors
- * ({@link NetworkError}) and server responses with a 5xx status
- * ({@link HttpError} whose `status` falls between 500 and 599). It does not retry
- * timeouts, client (4xx) errors, request-construction errors or unclassified
- * failures.
+ * ({@link NetworkError}), server responses with a 5xx status ({@link HttpError}
+ * whose `status` falls between 500 and 599) and `429 Too Many Requests`, which is
+ * a rate limit rather than a client mistake and clears on its own. It does not
+ * retry timeouts, cancellations, other client (4xx) errors, request-construction
+ * errors or unclassified failures.
  *
  * @param error - Error captured on the failed attempt.
  * @returns `true` when the error counts as transient and is worth retrying.
  */
 export function defaultShouldRetry(error: unknown): boolean {
+  // A cancellation is deliberate: retrying it would defeat the caller's intent.
+  if (error instanceof CancelledError) {
+    return false;
+  }
   if (error instanceof HttpError) {
-    return error.status >= 500 && error.status <= 599;
+    // 429 is a rate limit, not a client mistake: it is worth waiting out, and the
+    // server usually says how long through Retry-After.
+    return error.status === 429 || (error.status >= 500 && error.status <= 599);
   }
   return error instanceof NetworkError;
 }
@@ -64,20 +78,25 @@ export function defaultShouldRetry(error: unknown): boolean {
  * @param signal - Abort signal that may cut the wait short, if any.
  */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  // Always reject with a CancelledError so that aborting mid-backoff stays inside
+  // the library's error model. `AbortSignal.reason` is whatever the caller passed
+  // to `abort()` — a `DOMException` when called with no argument, but it may be any
+  // value, including `undefined` — so it is preserved as the `cause` rather than
+  // being thrown raw.
+  const cancelled = (): CancelledError =>
+    new CancelledError('The request was cancelled while waiting to retry', {
+      cause: signal?.reason,
+    });
+
   return new Promise((resolve, reject) => {
-    // `AbortSignal.reason` is whatever the caller passed to `abort()` — it is not
-    // required to be an `Error`. Propagating it verbatim is the contract, so the
-    // prefer-promise-reject-errors rule is deliberately relaxed here.
     if (signal?.aborted) {
-      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-      reject(signal.reason);
+      reject(cancelled());
       return;
     }
 
     const onAbort = () => {
       clearTimeout(timer);
-      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-      reject(signal?.reason);
+      reject(cancelled());
     };
 
     const timer = setTimeout(() => {
@@ -110,6 +129,14 @@ export async function withRetry<T>(
   const maxRetries = Math.max(0, options.retries);
 
   for (let attempt = 0; ; attempt++) {
+    // The signal is checked here, not only inside `sleep()`: with no backoff
+    // configured the wait is 0 and `sleep()` is never reached, so this is the only
+    // place a cancellation can stop the loop before spending another attempt. An
+    // already-aborted signal therefore costs zero attempts.
+    if (options.signal?.aborted) {
+      throw new CancelledError(undefined, { cause: options.signal.reason });
+    }
+
     try {
       return await operation(attempt);
     } catch (error) {
@@ -120,7 +147,17 @@ export async function withRetry<T>(
         throw error;
       }
 
-      const wait = options.backoff?.delay(nextAttempt) ?? 0;
+      // A server that states how long to wait knows better than any client-side
+      // guess, so Retry-After takes precedence over the configured backoff.
+      const requested =
+        error instanceof HttpError
+          ? retryAfterDelay(
+              error.status,
+              error.response?.headers['retry-after'],
+              options.maxRetryAfterMs,
+            )
+          : null;
+      const wait = requested ?? options.backoff?.delay(nextAttempt) ?? 0;
       if (wait > 0) {
         await sleep(wait, options.signal);
       }

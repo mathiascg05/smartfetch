@@ -13,7 +13,14 @@
  * @module client
  */
 
-import { HttpError, NetworkError, ParseError, SmartFetchError } from './errors.js';
+import {
+  CancelledError,
+  HttpError,
+  NetworkError,
+  ParseError,
+  SmartFetchError,
+  TimeoutError,
+} from './errors.js';
 import type {
   FetchAdapter,
   HeadersInit,
@@ -22,7 +29,7 @@ import type {
   SmartFetchOptions,
   SmartFetchResponse,
 } from './types.js';
-import { withTimeout } from './timeout.js';
+import { isAbortError, withTimeout } from './timeout.js';
 import { defaultShouldRetry, withRetry } from './retry/retry.js';
 import { InterceptorManager } from './interceptors.js';
 import { buildURL } from './url.js';
@@ -48,10 +55,116 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+/**
+ * Whether a request body can be sent more than once.
+ *
+ * Retrying re-sends the same `RequestInit`, so the body must survive being read
+ * again. Strings, plain objects (serialized to JSON), `URLSearchParams`, `Blob`,
+ * `ArrayBuffer`, typed arrays and `FormData` all can: `fetch` re-reads them from
+ * memory. A `ReadableStream` cannot — the first attempt drains it — and neither
+ * can an async iterable.
+ *
+ * Rebuilding the `RequestInit` per attempt would not help: it reads `config.body`
+ * again and hands over the very same, already-drained stream object.
+ */
+function isReplayableBody(body: unknown): boolean {
+  if (body === undefined || body === null) {
+    return true;
+  }
+  if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {
+    return false;
+  }
+  // Async iterables (including Node streams) are single-pass too.
+  return !(typeof body === 'object' && Symbol.asyncIterator in (body as Record<symbol, unknown>));
+}
+
+/**
+ * Extracts every `Set-Cookie` header without collapsing repeats.
+ *
+ * A server may send `Set-Cookie` several times, and folding those into a flat
+ * record keeps only the last one. `Headers.getSetCookie()` is the API designed for
+ * exactly this and is used when available (Node 18.14+, modern browsers).
+ *
+ * The fallback returns whatever the single-value getter reports. Joined cookies
+ * are deliberately **not** split on commas: `Expires` dates contain commas, so
+ * splitting corrupts the values. Returning one entry is lossy but never wrong.
+ */
+function readSetCookie(headers: Headers): string[] {
+  const withGetter = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof withGetter.getSetCookie === 'function') {
+    return withGetter.getSetCookie();
+  }
+  const single = headers.get('set-cookie');
+  return single === null ? [] : [single];
+}
+
 /** Looks up a header by name, case-insensitively. */
 function hasHeader(headers: HeadersInit, name: string): boolean {
   const target = name.toLowerCase();
   return Object.keys(headers).some((key) => key.toLowerCase() === target);
+}
+
+/**
+ * Merges two header sets case-insensitively.
+ *
+ * HTTP header names are case-insensitive, so `content-type` and `Content-Type`
+ * are the same header. A plain object spread would keep both keys and `fetch`
+ * would send them as a single comma-joined value, which is almost never what the
+ * caller meant.
+ *
+ * `override` wins, and the header is emitted **with the capitalization the winning
+ * side wrote** rather than being canonicalized: it is the least surprising
+ * behaviour and keeps working against servers that expect a particular spelling.
+ *
+ * @param base - Lower-precedence headers (the client defaults).
+ * @param override - Higher-precedence headers (the request's own).
+ */
+function mergeHeaders(base: HeadersInit = {}, override: HeadersInit = {}): HeadersInit {
+  const merged: HeadersInit = {};
+  /** Maps the lowercase name to the key currently emitted for it. */
+  const emittedFor = new Map<string, string>();
+
+  const put = (name: string, value: string): void => {
+    const lower = name.toLowerCase();
+    const previous = emittedFor.get(lower);
+    if (previous !== undefined) {
+      delete merged[previous];
+    }
+    emittedFor.set(lower, name);
+    merged[name] = value;
+  };
+
+  for (const [name, value] of Object.entries(base)) {
+    put(name, value);
+  }
+  for (const [name, value] of Object.entries(override)) {
+    put(name, value);
+  }
+
+  return merged;
+}
+
+/**
+ * Checks that what came out of the request interceptor chain is still a usable
+ * configuration.
+ *
+ * Forgetting the `return` in a request interceptor is the easiest mistake to make,
+ * and without this guard it surfaced as a bare `TypeError` from the internals
+ * ("Cannot read properties of undefined") — outside the library's error model and
+ * with no hint of what to fix.
+ *
+ * @param value - Value produced by the last request interceptor.
+ * @throws {SmartFetchError} With `type: 'request'` when the contract was broken.
+ */
+function assertRequestConfig(value: unknown): RequestConfig {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new SmartFetchError(
+      'A request interceptor must return the config object it received ' +
+        `(got ${value === null ? 'null' : typeof value}). Did you forget the return statement?`,
+      { type: 'request' },
+    );
+  }
+  return value;
 }
 
 /**
@@ -65,8 +178,11 @@ export class SmartFetch {
   /** Default configuration applied to every request. */
   private readonly defaults: RequestConfig;
 
-  /** Low-level adapter performing the actual request (Adapter pattern). */
-  private readonly adapter: FetchAdapter;
+  /**
+   * Adapter injected by the caller, if any (Adapter pattern). When absent, the
+   * global `fetch` is resolved per request by {@link SmartFetch.resolveAdapter}.
+   */
+  private readonly injectedFetch?: FetchAdapter;
 
   /**
    * Request and response interceptors (aspect-oriented hooks).
@@ -83,7 +199,9 @@ export class SmartFetch {
    * });
    */
   readonly interceptors = {
+    /** Chain applied to the {@link RequestConfig} before the request is sent. */
     request: new InterceptorManager<RequestConfig>(),
+    /** Chain applied to the {@link SmartFetchResponse} once it arrives. */
     response: new InterceptorManager<SmartFetchResponse>(),
   };
 
@@ -93,16 +211,34 @@ export class SmartFetch {
    */
   constructor(defaults: RequestConfig = {}, options: SmartFetchOptions = {}) {
     this.defaults = defaults;
+    this.injectedFetch = options.fetch;
+  }
 
-    const adapter: FetchAdapter | undefined = options.fetch ?? globalThis.fetch;
-    if (typeof adapter !== 'function') {
+  /**
+   * Resolves the adapter to use for a request.
+   *
+   * The global `fetch` is looked up **per request**, not in the constructor, so
+   * that merely constructing a client — including the default {@link smartfetch}
+   * singleton built when this library is imported — never throws on a runtime
+   * without a global `fetch`. That runtime is precisely where a caller would want
+   * to inject their own adapter, and an eager check never gave them the chance.
+   * A late-loaded polyfill is picked up for the same reason.
+   *
+   * @throws {SmartFetchError} With `type: 'request'` when no `fetch` is available.
+   */
+  private resolveAdapter(): FetchAdapter {
+    if (this.injectedFetch) {
+      return this.injectedFetch;
+    }
+    const globalFetch = globalThis.fetch as FetchAdapter | undefined;
+    if (typeof globalFetch !== 'function') {
       throw new SmartFetchError(
         'No fetch implementation available. Use Node 18+ or inject one via options.fetch.',
         { type: 'request' },
       );
     }
     // Bind the global fetch to globalThis to avoid "Illegal invocation".
-    this.adapter = options.fetch ? options.fetch : adapter.bind(globalThis);
+    return globalFetch.bind(globalThis);
   }
 
   /**
@@ -131,9 +267,12 @@ export class SmartFetch {
       chain.unshift([interceptor.fulfilled, interceptor.rejected]);
     });
 
-    // Request core: receives the intercepted config and returns the response.
+    // Request core: receives the intercepted config and returns the response. The
+    // config is validated here, at the boundary between caller-supplied
+    // interceptors and the internals, so a broken interceptor fails inside the
+    // library's error model instead of as a TypeError deeper down.
     chain.push([
-      (cfg: RequestConfig): Promise<SmartFetchResponse<T>> => this.dispatch<T>(cfg),
+      (cfg: unknown): Promise<SmartFetchResponse<T>> => this.dispatch<T>(assertRequestConfig(cfg)),
       undefined,
     ]);
 
@@ -163,12 +302,21 @@ export class SmartFetch {
    * @returns The effective configuration the request will run with.
    */
   private mergeConfig(config: RequestConfig): RequestConfig {
-    return {
+    const merged: RequestConfig = {
       ...this.defaults,
       ...config,
       method: config.method ?? this.defaults.method ?? 'GET',
-      headers: { ...this.defaults.headers, ...config.headers },
+      // `headers` and `params` are the only fields merged in depth; a plain spread
+      // would drop client-level defaults (an API key in `params`, for instance)
+      // the moment a request brought its own.
+      headers: mergeHeaders(this.defaults.headers, config.headers),
     };
+
+    if (this.defaults.params ?? config.params) {
+      merged.params = { ...this.defaults.params, ...config.params };
+    }
+
+    return merged;
   }
 
   /**
@@ -180,18 +328,95 @@ export class SmartFetch {
    * @param effective - Effective configuration (already merged and intercepted).
    */
   private dispatch<T>(effective: RequestConfig): Promise<SmartFetchResponse<T>> {
+    const retries = effective.retries ?? 0;
+
+    // A single-pass body cannot survive a second attempt, and the failure would
+    // otherwise show up as an opaque runtime error on the retry — or worse, as a
+    // silently empty body. Refusing up front, before touching the network, is the
+    // only honest option.
+    if (retries > 0 && !isReplayableBody(effective.body)) {
+      return Promise.reject(
+        new SmartFetchError(
+          'A stream body cannot be retried: the first attempt consumes it. ' +
+            'Set retries to 0 for this request, or buffer the stream into a string, ' +
+            'Blob or ArrayBuffer first.',
+          { type: 'request', config: effective },
+        ),
+      );
+    }
+
+    const totalTimeout = effective.totalTimeout ?? 0;
+    if (totalTimeout <= 0) {
+      return this.runAttempts<T>(effective, retries);
+    }
+
+    // A global deadline needs its own controller so that it can cut the operation
+    // at any point — mid-attempt or mid-backoff — rather than only bounding each
+    // attempt the way `timeout` does.
+    const controller = new AbortController();
+    let expired = false;
+
+    const onExternalAbort = () => controller.abort(effective.signal?.reason);
+    if (effective.signal) {
+      if (effective.signal.aborted) {
+        controller.abort(effective.signal.reason);
+      } else {
+        effective.signal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
+
+    const timer = setTimeout(() => {
+      expired = true;
+      controller.abort();
+    }, totalTimeout);
+
+    // The composed signal replaces the original for the whole run, so both the
+    // per-attempt timeout and the backoff waits honour the global deadline.
+    return this.runAttempts<T>({ ...effective, signal: controller.signal }, retries)
+      .catch((error: unknown) => {
+        // Only our own timer turns the abort into a TimeoutError; an external
+        // cancellation stays a CancelledError.
+        if (expired) {
+          throw new TimeoutError(totalTimeout, { config: effective, cause: error });
+        }
+        throw error;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (effective.signal) {
+          effective.signal.removeEventListener('abort', onExternalAbort);
+        }
+      });
+  }
+
+  /**
+   * Runs the attempt loop for an already-prepared configuration.
+   *
+   * Split out of {@link SmartFetch.dispatch} so that the global-deadline path can
+   * reuse it with a composed signal.
+   *
+   * @typeParam T - Expected type of the parsed response body.
+   * @param effective - Effective configuration, with its final `signal`.
+   * @param retries - Retry budget for this request.
+   */
+  private runAttempts<T>(
+    effective: RequestConfig,
+    retries: number,
+  ): Promise<SmartFetchResponse<T>> {
     // URL and native options are built once and reused across attempts (the retry
     // engine re-runs performAttempt, not this).
     const url = buildURL(effective);
     const init = this.buildRequestInit(effective);
+    const adapter = this.resolveAdapter();
 
     return withRetry(
-      (): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(url, init, effective),
+      (): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(adapter, url, init, effective),
       {
-        retries: effective.retries ?? 0,
+        retries,
         backoff: effective.backoff,
         shouldRetry: effective.retryOn ?? defaultShouldRetry,
         signal: effective.signal,
+        maxRetryAfterMs: effective.maxRetryAfterMs,
       },
     );
   }
@@ -208,6 +433,7 @@ export class SmartFetch {
    * @throws {ParseError} If the body of an accepted response cannot be parsed.
    */
   private async performAttempt<T>(
+    adapter: FetchAdapter,
     url: string,
     init: RequestInit,
     effective: RequestConfig,
@@ -220,12 +446,18 @@ export class SmartFetch {
       raw = await withTimeout(
         effective.timeout,
         effective.signal,
-        (signal) => this.adapter(url, signal ? { ...init, signal } : init),
+        (signal) => adapter(url, signal ? { ...init, signal } : init),
         effective,
       );
     } catch (error) {
+      // A deadline that expired already arrived here as a TimeoutError.
       if (error instanceof SmartFetchError) {
         throw error;
+      }
+      // Any remaining abort is caller-driven: the external signal fired. It is a
+      // cancellation, not a transport failure, so it must not be retried.
+      if (isAbortError(error)) {
+        throw new CancelledError(undefined, { config: effective, cause: error });
       }
       throw new NetworkError('Network error while performing the request', {
         config: effective,
@@ -233,7 +465,27 @@ export class SmartFetch {
       });
     }
 
-    const response = await this.buildResponse<T>(raw, url, effective);
+    // Reading the body is a second trip over the network and can fail on its own:
+    // a socket cut mid-response rejects here, not above. Without this guard that
+    // failure escaped as a bare `TypeError: terminated`, outside the error model
+    // and invisible to the retry policy — even though a truncated response is
+    // exactly the kind of transient fault worth retrying.
+    let response: SmartFetchResponse<T>;
+    try {
+      response = await this.buildResponse<T>(raw, url, effective);
+    } catch (error) {
+      // A ParseError raised by parseBody is already part of the model.
+      if (error instanceof SmartFetchError) {
+        throw error;
+      }
+      if (isAbortError(error)) {
+        throw new CancelledError(undefined, { config: effective, cause: error });
+      }
+      throw new NetworkError('The connection closed before the response body was fully read', {
+        config: effective,
+        cause: error,
+      });
+    }
 
     if (!this.isStatusAccepted(response.status, effective)) {
       throw new HttpError(response.status, response.statusText, {
@@ -379,6 +631,7 @@ export class SmartFetch {
       status: raw.status,
       statusText: raw.statusText,
       headers,
+      setCookie: readSetCookie(raw.headers),
       ok: raw.ok,
       url: raw.url || url,
       config,

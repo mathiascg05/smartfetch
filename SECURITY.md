@@ -23,6 +23,23 @@ Include, as far as you can:
 You can expect an initial response within 7 days. If the report is confirmed, a fix will be
 released and you will be credited in the advisory unless you prefer otherwise.
 
+## Supply chain
+
+Releases are published from GitHub Actions with [npm provenance](https://docs.npmjs.com/generating-provenance-statements)
+(`.github/workflows/release.yml`). Provenance is a signed attestation linking the
+published tarball to the exact commit and workflow run that produced it, so you can
+verify a release came from this repository rather than from someone's laptop.
+
+Verify an installed copy with:
+
+```bash
+npm audit signatures
+```
+
+The published package contains only `dist/`, the licence and the READMEs — no build
+scripts run on install beyond the standard `prepare`, and there are **zero runtime
+dependencies**.
+
 ## Scope
 
 SmartFetch has **zero runtime dependencies** and performs no I/O beyond the HTTP request the

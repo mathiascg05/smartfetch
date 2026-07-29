@@ -43,3 +43,12 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # publint + arethetypeswrong: catches a broken `exports` map or type
+      # declarations that misrepresent the module format to consumers.
+      - name: Validate packaging
+        run: npm run check:pack
+
+      # Fails if the ESM entry grows past the budget declared in package.json.
+      - name: Check bundle size
+        run: npm run size

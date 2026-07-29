@@ -3,6 +3,8 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
+[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.6%20kB%20gzip-brightgreen.svg)](#pruebas)
+[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -185,10 +187,30 @@ const otro = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
 ```
 
 La estrategia de espera es un **Strategy** intercambiable (`BackoffStrategy`):
-`FixedBackoff(delayMs = 0)` y `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. La espera de
-backoff es cancelable por la `signal` externa.
+`FixedBackoff(delayMs = 0)` y `ExponentialBackoff(baseMs = 100, maxMs = Infinity, options)`. La
+espera de backoff es cancelable por la `signal` externa.
+
+`ExponentialBackoff` aplica **jitter por defecto**, para que los clientes que fallaron a la vez no
+reintenten a la vez y repitan el pico de carga. Usa _equal jitter_: el retardo cae en
+`[exponencial / 2, exponencial]`, lo que conserva un suelo de espera a diferencia del full jitter.
+Se desactiva con `new ExponentialBackoff(100, Infinity, { jitter: false })` cuando se necesita un
+retardo determinista.
 
 Para políticas a medida, `retryOn` reemplaza la decisión por defecto:
+
+### `Retry-After`
+
+Ante un **429** o un **503**, el servidor puede indicar cuánto esperar mediante la cabecera
+`Retry-After`, en segundos (`Retry-After: 120`) o como fecha HTTP. SmartFetch la respeta y le da
+**precedencia sobre el backoff configurado**: el servidor sabe mejor que el cliente cuándo estará
+listo.
+
+La espera se acota con `maxRetryAfterMs` (un minuto por defecto), para que un servidor que pida una
+hora no cuelgue la petición todo ese tiempo. Un valor ilegible cae al backoff configurado, y la
+cabecera se ignora en códigos donde no significa "espera".
+
+El `429` entra en la política de reintentos por defecto por el mismo motivo: es un límite de tasa
+que se resuelve solo, no un error de quien llama.
 
 ```ts
 // Reintentar también en 429 (Too Many Requests), hasta 4 intentos.
@@ -254,39 +276,78 @@ en orden de registro (FIFO), igual que en `axios`.
 `RequestConfig` (todos los campos son opcionales). Se puede pasar como configuración por defecto
 del cliente y/o por petición; los valores de la petición se fusionan sobre los del cliente.
 
-| Opción           | Tipo                          | Descripción                                                                    |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------ |
-| `baseURL`        | `string`                      | URL base a la que se resuelven las rutas relativas.                            |
-| `url`            | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).      |
-| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                               |
-| `headers`        | `Record<string, string>`      | Cabeceras HTTP.                                                                |
-| `params`         | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays).          |
-| `body`           | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.         |
-| `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite).                      |
-| `retries`        | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento).                  |
-| `backoff`        | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                              |
-| `retryOn`        | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto. |
-| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.           |
-| `validateStatus` | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                   |
-| `signal`         | `AbortSignal`                 | Señal externa para cancelar la petición.                                       |
+| Opción            | Tipo                          | Descripción                                                                                                          |
+| ----------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `baseURL`         | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                  |
+| `url`             | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                            |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                     |
+| `headers`         | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
+| `params`          | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
+| `body`            | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
+| `timeout`         | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite). Acota un único intento.                                    |
+| `totalTimeout`    | `number`                      | Milisegundos para la operación completa, esperas de backoff incluidas (`0`/omitido = sin límite global).             |
+| `retries`         | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento). Incompatible con un cuerpo de tipo stream — ver abajo. |
+| `backoff`         | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                    |
+| `retryOn`         | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                       |
+| `maxRetryAfterMs` | `number`                      | Tope para la espera que pida el servidor vía `Retry-After` (default `60000`).                                        |
+| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                 |
+| `validateStatus`  | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                         |
+| `signal`          | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                             |
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Reglas de fusión
+
+La configuración por defecto del cliente y la de cada petición se combinan campo a campo:
+
+- Las **`headers`** se fusionan **sin distinguir mayúsculas** — `content-type` y `Content-Type` son
+  la misma cabecera, así que nunca se envían duplicadas. Gana el valor de la petición, y la cabecera
+  se emite con **la capitalización que escribió quien gana** (no se canonicaliza).
+- Los **`params`** también se fusionan, de modo que un valor por defecto del cliente (una API key,
+  un id de tenant) sobrevive a una petición que traiga los suyos. Si la clave coincide gana la
+  petición; pasar `null` o `undefined` elimina el parámetro, que es la forma de renunciar a un
+  valor por defecto.
+- El resto de campos se **reemplazan** por el valor de la petición cuando está presente.
+
+### Reintentos y cuerpo de la petición
+
+Reintentar reenvía el mismo cuerpo, así que este tiene que sobrevivir a que lo lean dos veces. El
+texto, los objetos planos, `URLSearchParams`, `Blob`, `ArrayBuffer`, los typed arrays y `FormData`
+lo hacen. Un **`ReadableStream` no**: el primer intento lo consume.
+
+En lugar de enviar en silencio un cuerpo vacío en el reintento, una petición que combine
+`retries > 0` con un cuerpo de tipo stream se rechaza de entrada con un `SmartFetchError`
+(`type: 'request'`), antes de tocar la red. Bufferiza el stream primero, o pon `retries: 0` en esa
+petición.
+
+```ts
+const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });
+await client.post('/x', body, { headers: { 'Content-Type': 'application/json' } });
+// envía exactamente una cabecera: Content-Type: application/json
+```
+
+```ts
+const client = new SmartFetch({ params: { api_key: 'SECRET' } });
+await client.get('/usuarios', { params: { page: 1 } });
+// -> /usuarios?api_key=SECRET&page=1
+```
 
 ## Respuesta y errores
 
 Cada método resuelve con un `SmartFetchResponse<T>`:
 
-| Campo        | Tipo                     | Descripción                                                      |
-| ------------ | ------------------------ | ---------------------------------------------------------------- |
-| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304). |
-| `status`     | `number`                 | Código de estado HTTP.                                           |
-| `statusText` | `string`                 | Texto del estado.                                                |
-| `headers`    | `Record<string, string>` | Cabeceras de la respuesta.                                       |
-| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                  |
-| `url`        | `string`                 | URL final de la petición.                                        |
-| `config`     | `RequestConfig`          | Configuración efectiva usada.                                    |
-| `raw`        | `Response`               | El `Response` nativo sin procesar.                               |
+| Campo        | Tipo                     | Descripción                                                               |
+| ------------ | ------------------------ | ------------------------------------------------------------------------- |
+| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304).          |
+| `status`     | `number`                 | Código de estado HTTP.                                                    |
+| `statusText` | `string`                 | Texto del estado.                                                         |
+| `headers`    | `Record<string, string>` | Cabeceras de la respuesta.                                                |
+| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, sin colapsar (vacío si no hay ninguna). |
+| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                           |
+| `url`        | `string`                 | URL final de la petición.                                                 |
+| `config`     | `RequestConfig`          | Configuración efectiva usada.                                             |
+| `raw`        | `Response`               | El `Response` nativo sin procesar.                                        |
 
 Los fallos se normalizan a una jerarquía de errores tipada. Todos extienden `SmartFetchError`,
 que expone el discriminador `type` y guards para estrechar el tipo:
@@ -319,6 +380,10 @@ try {
 
 Todos comparten además `config` (la petición que falló) y `cause` (el error original, si lo hubo).
 
+> **Para identificar un error:** usa `instanceof`, `error.type` o los guards `isX()`. El bundle
+> publicado va minificado, así que `error.constructor.name` sale ofuscado — `error.name` se asigna
+> explícitamente y sí es fiable.
+
 ## Patrones de diseño
 
 - **Adapter** — el cliente envuelve `fetch` nativo tras una interfaz propia e inyectable.
@@ -335,11 +400,9 @@ adoptarlo:
 - **No expone `credentials` / `mode` / `cache` / `redirect` / `keepalive` de `RequestInit`.** En la
   práctica esto significa que **la autenticación por cookies en el navegador no está soportada**.
 - **No hay `HEAD` ni `OPTIONS`**: solo `GET`, `POST`, `PUT`, `PATCH` y `DELETE`.
-- **Cabeceras solo como `Record<string, string>`**: sin instancias de `Headers` ni cabeceras
-  repetidas de valor múltiple.
-- **No se respeta la cabecera `Retry-After`** en 429/503; siempre manda el backoff configurado.
-- **`ExponentialBackoff` no aplica jitter**, así que varios clientes concurrentes pueden reintentar
-  sincronizados.
+- **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
+  cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
+  conservan en `response.setCookie`.
 - **Probado solo en Node ≥ 18.** El código es agnóstico al runtime y debería funcionar en
   navegadores y edge runtimes, pero no hay una suite de pruebas de navegador que lo respalde.
 
@@ -356,6 +419,8 @@ npm run typecheck     # tsc --noEmit
 npm run test          # Jest (ESM)
 npm run test:coverage # exige el umbral del 100%
 npm run build         # dist/ (ESM + CJS + tipos)
+npm run check:pack    # publint + arethetypeswrong
+npm run size          # impone el presupuesto de tamaño
 npm run example       # prueba de humo end-to-end contra una API real
 ```
 
