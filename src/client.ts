@@ -55,6 +55,46 @@ function hasHeader(headers: HeadersInit, name: string): boolean {
 }
 
 /**
+ * Merges two header sets case-insensitively.
+ *
+ * HTTP header names are case-insensitive, so `content-type` and `Content-Type`
+ * are the same header. A plain object spread would keep both keys and `fetch`
+ * would send them as a single comma-joined value, which is almost never what the
+ * caller meant.
+ *
+ * `override` wins, and the header is emitted **with the capitalization the winning
+ * side wrote** rather than being canonicalized: it is the least surprising
+ * behaviour and keeps working against servers that expect a particular spelling.
+ *
+ * @param base - Lower-precedence headers (the client defaults).
+ * @param override - Higher-precedence headers (the request's own).
+ */
+function mergeHeaders(base: HeadersInit = {}, override: HeadersInit = {}): HeadersInit {
+  const merged: HeadersInit = {};
+  /** Maps the lowercase name to the key currently emitted for it. */
+  const emittedFor = new Map<string, string>();
+
+  const put = (name: string, value: string): void => {
+    const lower = name.toLowerCase();
+    const previous = emittedFor.get(lower);
+    if (previous !== undefined) {
+      delete merged[previous];
+    }
+    emittedFor.set(lower, name);
+    merged[name] = value;
+  };
+
+  for (const [name, value] of Object.entries(base)) {
+    put(name, value);
+  }
+  for (const [name, value] of Object.entries(override)) {
+    put(name, value);
+  }
+
+  return merged;
+}
+
+/**
  * High-level HTTP client built on top of the native `fetch`.
  *
  * @example
@@ -167,7 +207,7 @@ export class SmartFetch {
       ...this.defaults,
       ...config,
       method: config.method ?? this.defaults.method ?? 'GET',
-      headers: { ...this.defaults.headers, ...config.headers },
+      headers: mergeHeaders(this.defaults.headers, config.headers),
     };
   }
 

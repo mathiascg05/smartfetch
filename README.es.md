@@ -259,7 +259,7 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 | `baseURL`        | `string`                      | URL base a la que se resuelven las rutas relativas.                            |
 | `url`            | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).      |
 | `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                               |
-| `headers`        | `Record<string, string>`      | Cabeceras HTTP.                                                                |
+| `headers`        | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).             |
 | `params`         | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays).          |
 | `body`           | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.         |
 | `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite).                      |
@@ -272,6 +272,21 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Reglas de fusión
+
+La configuración por defecto del cliente y la de cada petición se combinan campo a campo:
+
+- Las **`headers`** se fusionan **sin distinguir mayúsculas** — `content-type` y `Content-Type` son
+  la misma cabecera, así que nunca se envían duplicadas. Gana el valor de la petición, y la cabecera
+  se emite con **la capitalización que escribió quien gana** (no se canonicaliza).
+- El resto de campos se **reemplazan** por el valor de la petición cuando está presente.
+
+```ts
+const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });
+await client.post('/x', body, { headers: { 'Content-Type': 'application/json' } });
+// envía exactamente una cabecera: Content-Type: application/json
+```
 
 ## Respuesta y errores
 

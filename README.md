@@ -261,7 +261,7 @@ and/or per request; request values are merged over the client ones.
 | `baseURL`        | `string`                      | Base URL that relative paths resolve against.                                 |
 | `url`            | `string`                      | Request path or URL (normally the 1st argument of each method).               |
 | `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                              |
-| `headers`        | `Record<string, string>`      | HTTP headers.                                                                 |
+| `headers`        | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below). |
 | `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported).            |
 | `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`. |
 | `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                     |
@@ -274,6 +274,21 @@ and/or per request; request values are merged over the client ones.
 
 The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Merge rules
+
+Client defaults and per-request configuration are combined per field:
+
+- **`headers`** merge **case-insensitively** — `content-type` and `Content-Type` are the same
+  header, so they never go out duplicated. The request's value wins, and the header is emitted with
+  **the capitalization the winning side wrote** (it is not canonicalized).
+- Every other field is **replaced** by the request's value when present.
+
+```ts
+const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });
+await client.post('/x', body, { headers: { 'Content-Type': 'application/json' } });
+// sends exactly one header: Content-Type: application/json
+```
 
 ## Response and errors
 
