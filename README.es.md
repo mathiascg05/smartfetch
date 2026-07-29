@@ -378,6 +378,10 @@ try {
 
 Todos comparten además `config` (la petición que falló) y `cause` (el error original, si lo hubo).
 
+> **Para identificar un error:** usa `instanceof`, `error.type` o los guards `isX()`. El bundle
+> publicado va minificado, así que `error.constructor.name` sale ofuscado — `error.name` se asigna
+> explícitamente y sí es fiable.
+
 ## Patrones de diseño
 
 - **Adapter** — el cliente envuelve `fetch` nativo tras una interfaz propia e inyectable.

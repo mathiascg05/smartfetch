@@ -378,6 +378,10 @@ try {
 They all additionally carry `config` (the request that failed) and `cause` (the original error, if
 any).
 
+> **Identifying an error:** use `instanceof`, `error.type` or the `isX()` guards. The published
+> bundle is minified, so `error.constructor.name` is mangled — `error.name` is set explicitly and
+> stays correct.
+
 ## Design patterns
 
 - **Adapter** — the client wraps the native `fetch` behind its own injectable interface.
