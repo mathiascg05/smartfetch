@@ -1,14 +1,14 @@
 /**
- * Cliente HTTP de SmartFetch.
+ * SmartFetch HTTP client.
  *
- * Define la clase {@link SmartFetch}, que envuelve la API nativa `fetch`
- * siguiendo el patrón Adapter: toda petición pasa por un {@link FetchAdapter}
- * inyectable (por defecto `globalThis.fetch`). El método central `request()`
- * construye la URL, realiza la llamada, parsea la respuesta y la normaliza en un
- * {@link SmartFetchResponse}, traduciendo los fallos al modelo de errores
- * controlados de la librería. En este incremento se expone el método `get()`;
- * el resto de verbos, el timeout y los reintentos se añaden en incrementos
- * posteriores.
+ * Defines the {@link SmartFetch} class, which wraps the native `fetch` API
+ * following the Adapter pattern: every request goes through an injectable
+ * {@link FetchAdapter} (`globalThis.fetch` by default). The central `request()`
+ * method builds the URL, performs the call, parses the response and normalizes it
+ * into a {@link SmartFetchResponse}, translating failures into the library's
+ * typed error model. Around that core sit the timeout, the retry engine and the
+ * interceptor chain, with `get`/`post`/`put`/`patch`/`delete` as thin wrappers
+ * over it.
  *
  * @module client
  */
@@ -28,8 +28,8 @@ import { InterceptorManager } from './interceptors.js';
 import { buildURL } from './url.js';
 
 /**
- * Indica si un valor es un objeto plano susceptible de serializarse como JSON
- * (descarta tipos de cuerpo que `fetch` ya sabe manejar de forma nativa).
+ * Whether a value is a plain object worth serializing as JSON (rules out the body
+ * types `fetch` already knows how to handle natively).
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) {
@@ -44,37 +44,37 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   ) {
     return false;
   }
-  const proto = Object.getPrototypeOf(value);
+  const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
-/** Busca una cabecera por nombre sin distinguir mayúsculas/minúsculas. */
+/** Looks up a header by name, case-insensitively. */
 function hasHeader(headers: HeadersInit, name: string): boolean {
   const target = name.toLowerCase();
   return Object.keys(headers).some((key) => key.toLowerCase() === target);
 }
 
 /**
- * Cliente HTTP de alto nivel construido sobre `fetch` nativo.
+ * High-level HTTP client built on top of the native `fetch`.
  *
  * @example
- * const client = new SmartFetch({ baseURL: 'https://api.ejemplo.com' });
- * const { data } = await client.get<Usuario[]>('/usuarios');
+ * const client = new SmartFetch({ baseURL: 'https://api.example.com' });
+ * const { data } = await client.get<User[]>('/users');
  */
 export class SmartFetch {
-  /** Configuración por defecto aplicada a cada petición. */
+  /** Default configuration applied to every request. */
   private readonly defaults: RequestConfig;
 
-  /** Adaptador de bajo nivel que ejecuta la petición real (patrón Adapter). */
+  /** Low-level adapter performing the actual request (Adapter pattern). */
   private readonly adapter: FetchAdapter;
 
   /**
-   * Interceptores de petición y respuesta (Programación Orientada a Aspectos).
+   * Request and response interceptors (aspect-oriented hooks).
    *
-   * - `request`: transforman la {@link RequestConfig} **antes** de construir la
-   *   URL y enviar la petición (p. ej. añadir cabeceras de autenticación).
-   * - `response`: transforman la {@link SmartFetchResponse} tras recibirla, y sus
-   *   manejadores de error pueden observar o **recuperarse** de un fallo.
+   * - `request`: transform the {@link RequestConfig} **before** the URL is built
+   *   and the request is sent (adding auth headers, for instance).
+   * - `response`: transform the {@link SmartFetchResponse} once received, and
+   *   their error handlers can observe or **recover from** a failure.
    *
    * @example
    * client.interceptors.request.use((config) => {
@@ -88,60 +88,63 @@ export class SmartFetch {
   };
 
   /**
-   * @param defaults - Configuración por defecto que se fusiona con la de cada petición.
-   * @param options - Opciones a nivel de cliente (por ejemplo, el `fetch` a inyectar).
+   * @param defaults - Default configuration merged into every request.
+   * @param options - Client-level options (the `fetch` to inject, for instance).
    */
   constructor(defaults: RequestConfig = {}, options: SmartFetchOptions = {}) {
     this.defaults = defaults;
 
-    const adapter = options.fetch ?? (globalThis.fetch as FetchAdapter | undefined);
+    const adapter: FetchAdapter | undefined = options.fetch ?? globalThis.fetch;
     if (typeof adapter !== 'function') {
       throw new SmartFetchError(
-        'No hay una implementación de fetch disponible. Usa Node 18+ o inyecta una vía options.fetch.',
+        'No fetch implementation available. Use Node 18+ or inject one via options.fetch.',
         { type: 'request' },
       );
     }
-    // Enlaza el fetch global a globalThis para evitar "Illegal invocation".
+    // Bind the global fetch to globalThis to avoid "Illegal invocation".
     this.adapter = options.fetch ? options.fetch : adapter.bind(globalThis);
   }
 
   /**
-   * Realiza una petición HTTP arbitraria y devuelve la respuesta normalizada.
+   * Performs an arbitrary HTTP request and returns the normalized response.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param config - Configuración de la petición (se fusiona con los valores por defecto).
-   * @throws {HttpError} Si el servidor responde con un código de estado no aceptado.
-   * @throws {NetworkError} Si la petición falla por un problema de red.
-   * @throws {TimeoutError} Si la petición supera el tiempo máximo de espera.
-   * @throws {ParseError} Si el cuerpo de una respuesta aceptada no puede parsearse.
+   * @typeParam T - Expected type of the parsed response body.
+   * @param config - Request configuration (merged with the client defaults).
+   * @throws {HttpError} If the server responds with a status code that is not accepted.
+   * @throws {NetworkError} If the request fails at the transport level.
+   * @throws {TimeoutError} If the request exceeds its deadline.
+   * @throws {ParseError} If the body of an accepted response cannot be parsed.
    */
   async request<T = unknown>(config: RequestConfig): Promise<SmartFetchResponse<T>> {
     const effective = this.mergeConfig(config);
 
-    // Se construye la cadena de la Programación Orientada a Aspectos (AOP):
-    //   [interceptores de request] -> núcleo (dispatch) -> [interceptores de response]
-    // Cada eslabón es un par [onFulfilled, onRejected] que se encadena con
-    // `.then(...)`, igual que en axios. Así los interceptores envuelven el núcleo
-    // sin que este conozca su existencia.
+    // Builds the aspect-oriented chain:
+    //   [request interceptors] -> core (dispatch) -> [response interceptors]
+    // Each link is an [onFulfilled, onRejected] pair chained with `.then(...)`,
+    // just like axios. This way interceptors wrap the core without the core ever
+    // knowing they exist.
     const chain: Array<[unknown, unknown]> = [];
 
-    // Los interceptores de request se ejecutan en orden INVERSO al de registro
-    // (LIFO): el último en registrarse es el primero en transformar la config.
+    // Request interceptors run in REVERSE registration order (LIFO): the last one
+    // registered is the first to transform the config.
     this.interceptors.request.forEach((interceptor) => {
       chain.unshift([interceptor.fulfilled, interceptor.rejected]);
     });
 
-    // Núcleo de la petición: recibe la config ya interceptada y devuelve la respuesta.
-    chain.push([(cfg: RequestConfig): Promise<SmartFetchResponse<T>> => this.dispatch<T>(cfg), undefined]);
+    // Request core: receives the intercepted config and returns the response.
+    chain.push([
+      (cfg: RequestConfig): Promise<SmartFetchResponse<T>> => this.dispatch<T>(cfg),
+      undefined,
+    ]);
 
-    // Los interceptores de response se ejecutan en orden de registro (FIFO).
+    // Response interceptors run in registration order (FIFO).
     this.interceptors.response.forEach((interceptor) => {
       chain.push([interceptor.fulfilled, interceptor.rejected]);
     });
 
-    // El valor que fluye por la cadena cambia de tipo (RequestConfig -> respuesta)
-    // al pasar por el núcleo, por lo que se opera sobre una promesa sin tipar y se
-    // reafirma el tipo final al devolverla (mismo enfoque que axios).
+    // The value flowing through the chain changes type (RequestConfig -> response)
+    // as it passes through the core, so an untyped promise is threaded through and
+    // the final type is reasserted on return (same approach axios takes).
     let promise: Promise<unknown> = Promise.resolve(effective);
     for (const [onFulfilled, onRejected] of chain) {
       promise = promise.then(
@@ -153,11 +156,11 @@ export class SmartFetch {
   }
 
   /**
-   * Fusiona la configuración por defecto del cliente con la de una petición
-   * concreta, dando prioridad a esta última y combinando las cabeceras.
+   * Merges the client defaults with a specific request configuration, giving the
+   * latter precedence and combining the headers of both.
    *
-   * @param config - Configuración específica de la petición.
-   * @returns La configuración efectiva con la que se realizará la petición.
+   * @param config - Request-specific configuration.
+   * @returns The effective configuration the request will run with.
    */
   private mergeConfig(config: RequestConfig): RequestConfig {
     return {
@@ -169,37 +172,40 @@ export class SmartFetch {
   }
 
   /**
-   * Núcleo de la petición: construye la URL y las opciones nativas una sola vez
-   * y ejecuta el intento (con reintentos y timeout). Es el eslabón central que
-   * los interceptores envuelven.
+   * Request core: builds the URL and the native options once, then runs the
+   * attempt (with retries and timeout). This is the central link interceptors
+   * wrap around.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param effective - Configuración efectiva (ya fusionada e interceptada).
+   * @typeParam T - Expected type of the parsed response body.
+   * @param effective - Effective configuration (already merged and intercepted).
    */
   private dispatch<T>(effective: RequestConfig): Promise<SmartFetchResponse<T>> {
-    // La URL y las opciones nativas se construyen una sola vez y se reutilizan en
-    // cada intento (el motor de reintentos vuelve a ejecutar performAttempt).
+    // URL and native options are built once and reused across attempts (the retry
+    // engine re-runs performAttempt, not this).
     const url = buildURL(effective);
     const init = this.buildRequestInit(effective);
 
-    return withRetry((): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(url, init, effective), {
-      retries: effective.retries ?? 0,
-      backoff: effective.backoff,
-      shouldRetry: effective.retryOn ?? defaultShouldRetry,
-      signal: effective.signal,
-    });
+    return withRetry(
+      (): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(url, init, effective),
+      {
+        retries: effective.retries ?? 0,
+        backoff: effective.backoff,
+        shouldRetry: effective.retryOn ?? defaultShouldRetry,
+        signal: effective.signal,
+      },
+    );
   }
 
   /**
-   * Ejecuta un único intento de la petición: realiza la llamada (con timeout y
-   * señal externa combinados), normaliza la respuesta y traduce los fallos al
-   * modelo de errores de la librería. El motor de reintentos ({@link withRetry})
-   * lo invoca una o varias veces según la política configurada.
+   * Runs a single attempt of the request: performs the call (with the timeout and
+   * external signal combined), normalizes the response and translates failures
+   * into the library's error model. The retry engine ({@link withRetry}) invokes
+   * it one or more times according to the configured policy.
    *
-   * @throws {HttpError} Si el servidor responde con un código de estado no aceptado.
-   * @throws {NetworkError} Si la petición falla por un problema de red.
-   * @throws {TimeoutError} Si la petición supera el tiempo máximo de espera.
-   * @throws {ParseError} Si el cuerpo de una respuesta aceptada no puede parsearse.
+   * @throws {HttpError} If the server responds with a status code that is not accepted.
+   * @throws {NetworkError} If the request fails at the transport level.
+   * @throws {TimeoutError} If the request exceeds its deadline.
+   * @throws {ParseError} If the body of an accepted response cannot be parsed.
    */
   private async performAttempt<T>(
     url: string,
@@ -208,9 +214,9 @@ export class SmartFetch {
   ): Promise<SmartFetchResponse<T>> {
     let raw: Response;
     try {
-      // El timeout (y la señal externa) se gestionan en withTimeout, que inyecta
-      // la señal combinada al init de la petición y traduce un plazo agotado a un
-      // TimeoutError controlado.
+      // The timeout (and the external signal) are handled by withTimeout, which
+      // injects the combined signal into the request init and translates an
+      // expired deadline into a typed TimeoutError.
       raw = await withTimeout(
         effective.timeout,
         effective.signal,
@@ -221,7 +227,7 @@ export class SmartFetch {
       if (error instanceof SmartFetchError) {
         throw error;
       }
-      throw new NetworkError('Error de red al intentar realizar la petición', {
+      throw new NetworkError('Network error while performing the request', {
         config: effective,
         cause: error,
       });
@@ -240,42 +246,39 @@ export class SmartFetch {
   }
 
   /**
-   * Determina si un código de estado HTTP debe considerarse satisfactorio.
+   * Decides whether an HTTP status code counts as successful.
    *
-   * Usa {@link RequestConfig.validateStatus} si se proporcionó; de lo contrario,
-   * acepta únicamente el rango 2xx (equivalente a `Response.ok`). Este mismo
-   * criterio decide tanto el lanzamiento de {@link HttpError} como la lenidad del
-   * parseo del cuerpo (un cuerpo ilegible solo lanza {@link ParseError} cuando la
-   * respuesta se considera aceptada).
+   * Uses {@link RequestConfig.validateStatus} when provided; otherwise accepts
+   * only the 2xx range (equivalent to `Response.ok`). The same criterion drives
+   * both throwing {@link HttpError} and how lenient body parsing is — an
+   * unreadable body only throws {@link ParseError} when the response is accepted.
    *
-   * @param status - Código de estado HTTP de la respuesta.
-   * @param config - Configuración efectiva de la petición.
+   * @param status - HTTP status code of the response.
+   * @param config - Effective request configuration.
    */
   private isStatusAccepted(status: number, config: RequestConfig): boolean {
-    return config.validateStatus
-      ? config.validateStatus(status)
-      : status >= 200 && status < 300;
+    return config.validateStatus ? config.validateStatus(status) : status >= 200 && status < 300;
   }
 
   /**
-   * Realiza una petición `GET`.
+   * Performs a `GET` request.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param url - Ruta o URL del recurso.
-   * @param config - Configuración adicional de la petición.
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param config - Extra request configuration.
    */
   get<T = unknown>(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<T>> {
     return this.request<T>({ ...config, method: 'GET', url });
   }
 
   /**
-   * Realiza una petición `POST`.
+   * Performs a `POST` request.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param url - Ruta o URL del recurso.
-   * @param body - Cuerpo a enviar. Si es un objeto plano se serializa como JSON
-   *   y se añade la cabecera `Content-Type: application/json` (salvo que ya exista).
-   * @param config - Configuración adicional de la petición.
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param body - Payload to send. Plain objects are serialized as JSON and the
+   *   `Content-Type: application/json` header is added unless one is already set.
+   * @param config - Extra request configuration.
    */
   post<T = unknown>(
     url: string,
@@ -286,13 +289,13 @@ export class SmartFetch {
   }
 
   /**
-   * Realiza una petición `PUT`.
+   * Performs a `PUT` request.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param url - Ruta o URL del recurso.
-   * @param body - Cuerpo a enviar. Si es un objeto plano se serializa como JSON
-   *   y se añade la cabecera `Content-Type: application/json` (salvo que ya exista).
-   * @param config - Configuración adicional de la petición.
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param body - Payload to send. Plain objects are serialized as JSON and the
+   *   `Content-Type: application/json` header is added unless one is already set.
+   * @param config - Extra request configuration.
    */
   put<T = unknown>(
     url: string,
@@ -303,13 +306,13 @@ export class SmartFetch {
   }
 
   /**
-   * Realiza una petición `PATCH`.
+   * Performs a `PATCH` request.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param url - Ruta o URL del recurso.
-   * @param body - Cuerpo a enviar. Si es un objeto plano se serializa como JSON
-   *   y se añade la cabecera `Content-Type: application/json` (salvo que ya exista).
-   * @param config - Configuración adicional de la petición.
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param body - Payload to send. Plain objects are serialized as JSON and the
+   *   `Content-Type: application/json` header is added unless one is already set.
+   * @param config - Extra request configuration.
    */
   patch<T = unknown>(
     url: string,
@@ -320,20 +323,20 @@ export class SmartFetch {
   }
 
   /**
-   * Realiza una petición `DELETE`.
+   * Performs a `DELETE` request.
    *
-   * No recibe cuerpo de forma posicional (lo habitual en este verbo); si se
-   * necesitara enviar uno, puede pasarse mediante `config.body`.
+   * Takes no positional body, as is customary for this verb; if one is needed it
+   * can be passed through `config.body`.
    *
-   * @typeParam T - Tipo esperado del cuerpo de la respuesta ya parseado.
-   * @param url - Ruta o URL del recurso.
-   * @param config - Configuración adicional de la petición.
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param config - Extra request configuration.
    */
   delete<T = unknown>(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<T>> {
     return this.request<T>({ ...config, method: 'DELETE', url });
   }
 
-  /** Construye las opciones nativas (`RequestInit`) a partir de la configuración efectiva. */
+  /** Builds the native options (`RequestInit`) from the effective configuration. */
   private buildRequestInit(config: RequestConfig): RequestInit {
     const headers: HeadersInit = { ...config.headers };
     const init: RequestInit = {
@@ -341,8 +344,8 @@ export class SmartFetch {
       headers,
     };
 
-    // La señal (timeout + señal externa combinadas) la inyecta withTimeout al
-    // ejecutar la petición; aquí no se toca `init.signal`.
+    // The signal (timeout + external signal combined) is injected by withTimeout
+    // when the request runs; `init.signal` is deliberately left untouched here.
 
     if (config.body !== undefined && config.method !== 'GET') {
       if (isPlainObject(config.body)) {
@@ -358,7 +361,7 @@ export class SmartFetch {
     return init;
   }
 
-  /** Normaliza un {@link Response} nativo en un {@link SmartFetchResponse}. */
+  /** Normalizes a native {@link Response} into a {@link SmartFetchResponse}. */
   private async buildResponse<T>(
     raw: Response,
     url: string,
@@ -384,24 +387,24 @@ export class SmartFetch {
   }
 
   /**
-   * Códigos de estado que, por especificación, no llevan cuerpo. Su respuesta se
-   * normaliza a `null` para todos los formatos, garantizando un comportamiento
-   * uniforme (en lugar de devolver `''`, un `Blob` vacío, etc.).
+   * Status codes that carry no body by specification. Their response is normalized
+   * to `null` across every format, guaranteeing uniform behaviour instead of
+   * returning `''`, an empty `Blob`, and so on.
    */
   private static readonly NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
   /**
-   * Interpreta el cuerpo de la respuesta según el formato solicitado.
+   * Reads the response body in the requested format.
    *
-   * Los estados sin cuerpo (204/205/304) se normalizan a `null` para todos los
-   * formatos. Para JSON y `formData`, un cuerpo ilegible en una respuesta
-   * aceptada produce un {@link ParseError}; en una respuesta de error se tolera
-   * (se devuelve el texto crudo o `null`) para que el {@link HttpError} prevalezca
-   * y su cuerpo pueda inspeccionarse.
+   * Body-less statuses (204/205/304) normalize to `null` across every format. For
+   * JSON and `formData`, an unreadable body on an accepted response raises a
+   * {@link ParseError}; on an error response it is tolerated (the raw text or
+   * `null` is returned) so that the {@link HttpError} prevails and its body stays
+   * inspectable.
    *
-   * @param raw - Respuesta nativa recibida de `fetch`.
-   * @param responseType - Formato en el que interpretar el cuerpo.
-   * @param config - Configuración efectiva (para decidir si el estado es aceptado).
+   * @param raw - Native response received from `fetch`.
+   * @param responseType - Format to read the body as.
+   * @param config - Effective configuration (used to decide whether the status is accepted).
    */
   private async parseBody(
     raw: Response,
@@ -430,17 +433,17 @@ export class SmartFetch {
   }
 
   /**
-   * Parsea el cuerpo como JSON tolerando cuerpos vacíos.
+   * Parses the body as JSON, tolerating empty bodies.
    *
-   * - Cuerpo vacío → `null`.
-   * - JSON válido → objeto parseado.
-   * - JSON inválido en respuesta aceptada → {@link ParseError}.
-   * - JSON inválido en respuesta no aceptada → se devuelve el texto crudo, de
-   *   modo que el {@link HttpError} posterior prevalezca y conserve el cuerpo.
+   * - Empty body → `null`.
+   * - Valid JSON → parsed object.
+   * - Invalid JSON on an accepted response → {@link ParseError}.
+   * - Invalid JSON on a rejected response → the raw text is returned, so that the
+   *   {@link HttpError} that follows prevails and keeps the body.
    *
-   * @param raw - Respuesta nativa recibida de `fetch`.
-   * @param accepted - Si el estado de la respuesta se considera satisfactorio.
-   * @param config - Configuración efectiva (se adjunta al {@link ParseError}).
+   * @param raw - Native response received from `fetch`.
+   * @param accepted - Whether the response status counts as successful.
+   * @param config - Effective configuration (attached to the {@link ParseError}).
    */
   private async parseJson(
     raw: Response,
@@ -457,7 +460,7 @@ export class SmartFetch {
       if (!accepted) {
         return text;
       }
-      throw new ParseError('No se pudo parsear el cuerpo de la respuesta como JSON', {
+      throw new ParseError('Could not parse the response body as JSON', {
         config,
         cause: error,
         responseType: 'json',
@@ -467,16 +470,16 @@ export class SmartFetch {
   }
 
   /**
-   * Ejecuta una lectura de cuerpo que puede fallar (p. ej. `Response.formData()`)
-   * y normaliza el fallo: en una respuesta aceptada lo traduce a {@link ParseError};
-   * en una respuesta de error lo tolera devolviendo `null` (el cuerpo ya se ha
-   * consumido y no es recuperable como texto), dejando que prevalezca el
-   * {@link HttpError}.
+   * Runs a body read that may fail (`Response.formData()`, for instance) and
+   * normalizes the failure: on an accepted response it becomes a
+   * {@link ParseError}; on an error response it is tolerated by returning `null`
+   * (the body has already been consumed and is not recoverable as text), letting
+   * the {@link HttpError} prevail.
    *
-   * @param read - Operación de lectura del cuerpo.
-   * @param responseType - Formato solicitado (para el {@link ParseError}).
-   * @param accepted - Si el estado de la respuesta se considera satisfactorio.
-   * @param config - Configuración efectiva (se adjunta al {@link ParseError}).
+   * @param read - Body read operation.
+   * @param responseType - Requested format (for the {@link ParseError}).
+   * @param accepted - Whether the response status counts as successful.
+   * @param config - Effective configuration (attached to the {@link ParseError}).
    */
   private async parseGuarded(
     read: () => Promise<unknown>,
@@ -490,10 +493,11 @@ export class SmartFetch {
       if (!accepted) {
         return null;
       }
-      throw new ParseError(
-        `No se pudo parsear el cuerpo de la respuesta como ${responseType}`,
-        { config, cause: error, responseType },
-      );
+      throw new ParseError(`Could not parse the response body as ${responseType}`, {
+        config,
+        cause: error,
+        responseType,
+      });
     }
   }
 }

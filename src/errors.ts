@@ -1,12 +1,11 @@
 /**
- * Modelo de errores de SmartFetch.
+ * SmartFetch error model.
  *
- * Define una jerarquía de errores controlados que permite a quien consume la
- * librería distinguir con claridad la causa de un fallo (tiempo de espera
- * agotado, problema de red, respuesta HTTP no satisfactoria o cuerpo que no se
- * pudo parsear) y reaccionar en consecuencia. Todos los errores heredan de
- * {@link SmartFetchError}, por lo
- * que pueden capturarse de forma genérica o específica.
+ * Defines a hierarchy of typed errors that lets consumers tell precisely why a
+ * request failed — the deadline expired, the network was unreachable, the server
+ * answered with an unsuccessful status, or the body could not be parsed — and
+ * react accordingly. Every error extends {@link SmartFetchError}, so they can be
+ * caught generically or narrowed to a specific case.
  *
  * @module errors
  */
@@ -14,40 +13,40 @@
 import type { RequestConfig, ResponseType, SmartFetchResponse } from './types.js';
 
 /**
- * Categoría a la que pertenece un {@link SmartFetchError}.
+ * Category a {@link SmartFetchError} belongs to.
  *
- * - `timeout`: la petición superó el tiempo máximo de espera.
- * - `network`: hubo un fallo de red (servidor inalcanzable, sin conexión, etc.).
- * - `http`: el servidor respondió con un código de estado de error.
- * - `parse`: el cuerpo de una respuesta satisfactoria no pudo interpretarse en el
- *   formato solicitado (por ejemplo, JSON malformado).
- * - `request`: la petición no pudo construirse o configurarse correctamente.
- * - `unknown`: causa no clasificada.
+ * - `timeout`: the request exceeded its deadline.
+ * - `network`: a transport failure (unreachable server, offline, DNS, ...).
+ * - `http`: the server responded with an unsuccessful status code.
+ * - `parse`: the body of a successful response could not be read in the requested
+ *   format (malformed JSON, for instance).
+ * - `request`: the request could not be built or configured.
+ * - `unknown`: unclassified cause.
  */
 export type SmartFetchErrorType = 'timeout' | 'network' | 'http' | 'parse' | 'request' | 'unknown';
 
 /**
- * Opciones comunes para construir un {@link SmartFetchError}.
+ * Options shared by every {@link SmartFetchError}.
  */
 export interface SmartFetchErrorOptions {
-  /** Categoría del error. Por defecto `"unknown"`. */
+  /** Error category. Defaults to `"unknown"`. */
   type?: SmartFetchErrorType;
-  /** Configuración con la que se realizaba la petición cuando ocurrió el error. */
+  /** Configuration the request was using when the error occurred. */
   config?: RequestConfig;
-  /** Error o valor original que provocó este error (para encadenar causas). */
+  /** Original error or value that caused this one (preserves the cause chain). */
   cause?: unknown;
 }
 
 /**
- * Error base de la librería. Todos los demás errores controlados heredan de él.
+ * Base error of the library. Every other typed error extends it.
  *
- * Captura la categoría del fallo y, opcionalmente, la configuración de la
- * petición y la causa original, manteniendo la cadena de prototipos correcta
- * para que `instanceof` funcione tanto con la clase base como con las derivadas.
+ * Captures the failure category and, optionally, the request configuration and
+ * the original cause, keeping the prototype chain intact so that `instanceof`
+ * works against both the base class and its subclasses.
  *
  * @example
  * try {
- *   await client.get('/usuarios');
+ *   await client.get('/users');
  * } catch (error) {
  *   if (error instanceof SmartFetchError) {
  *     console.error(error.type, error.message);
@@ -55,18 +54,18 @@ export interface SmartFetchErrorOptions {
  * }
  */
 export class SmartFetchError extends Error {
-  /** Categoría del error. */
+  /** Error category. */
   readonly type: SmartFetchErrorType;
 
-  /** Configuración de la petición asociada al error, si está disponible. */
+  /** Configuration of the request tied to this error, when available. */
   readonly config?: RequestConfig;
 
-  /** Causa original del error, si la hubo. */
+  /** Original cause of the error, if any. */
   readonly cause?: unknown;
 
   /**
-   * @param message - Mensaje descriptivo del error.
-   * @param options - Metadatos opcionales del error (categoría, configuración y causa).
+   * @param message - Human-readable description of the failure.
+   * @param options - Optional error metadata (category, configuration and cause).
    */
   constructor(message: string, options: SmartFetchErrorOptions = {}) {
     super(message);
@@ -75,64 +74,64 @@ export class SmartFetchError extends Error {
     this.config = options.config;
     this.cause = options.cause;
 
-    // Restaura la cadena de prototipos: necesario al extender Error en TypeScript
-    // para que `instanceof` siga funcionando con la subclase real instanciada.
+    // Restore the prototype chain: required when extending Error in TypeScript so
+    // that `instanceof` keeps working against the actual subclass instantiated.
     Object.setPrototypeOf(this, new.target.prototype);
 
-    // Genera una traza de pila limpia en los entornos que lo soportan (V8/Node).
-    const captureStackTrace = (Error as unknown as {
-      captureStackTrace?: (target: object, ctor: Function) => void;
-    }).captureStackTrace;
+    // Produce a clean stack trace on runtimes that support it (V8/Node).
+    const { captureStackTrace } = Error as unknown as {
+      captureStackTrace?: (target: object, ctor: new (...args: never[]) => unknown) => void;
+    };
     if (typeof captureStackTrace === 'function') {
       captureStackTrace(this, new.target);
     }
   }
 
-  /** Indica si el error se debe a que se agotó el tiempo de espera. */
+  /** Whether the request failed because its deadline expired. */
   isTimeout(): this is TimeoutError {
     return this.type === 'timeout';
   }
 
-  /** Indica si el error se debe a un problema de red. */
+  /** Whether the request failed because of a network problem. */
   isNetwork(): this is NetworkError {
     return this.type === 'network';
   }
 
-  /** Indica si el error se debe a una respuesta HTTP no satisfactoria. */
+  /** Whether the request failed with an unsuccessful HTTP status. */
   isHttp(): this is HttpError {
     return this.type === 'http';
   }
 
-  /** Indica si el error se debe a que el cuerpo de una respuesta no pudo parsearse. */
+  /** Whether the response body could not be parsed. */
   isParse(): this is ParseError {
     return this.type === 'parse';
   }
 }
 
 /**
- * Opciones para construir un {@link TimeoutError}.
+ * Options for building a {@link TimeoutError}.
  */
 export interface TimeoutErrorOptions {
-  /** Configuración de la petición que excedió el tiempo de espera. */
+  /** Configuration of the request that exceeded its deadline. */
   config?: RequestConfig;
-  /** Causa original (por ejemplo, el `AbortError` subyacente). */
+  /** Original cause (typically the underlying `AbortError`). */
   cause?: unknown;
 }
 
 /**
- * Error lanzado cuando una petición supera el tiempo máximo de espera y es
- * cancelada automáticamente.
+ * Thrown when a request exceeds its maximum wait time and is aborted
+ * automatically.
  */
 export class TimeoutError extends SmartFetchError {
-  /** Tiempo máximo de espera (en milisegundos) que se excedió. */
+  /** Deadline, in milliseconds, that was exceeded. */
   readonly timeout: number;
 
   /**
-   * @param timeout - Tiempo máximo de espera, en milisegundos, que se superó.
-   * @param options - Metadatos opcionales del error.
+   * @param timeout - Deadline, in milliseconds, that was exceeded.
+   * @param options - Optional error metadata.
    */
   constructor(timeout: number, options: TimeoutErrorOptions = {}) {
-    super(`La petición excedió el tiempo máximo de espera de ${timeout} ms`, {
+    super(`The request exceeded its timeout of ${timeout} ms`, {
       type: 'timeout',
       config: options.config,
       cause: options.cause,
@@ -143,26 +142,26 @@ export class TimeoutError extends SmartFetchError {
 }
 
 /**
- * Opciones para construir un {@link NetworkError}.
+ * Options for building a {@link NetworkError}.
  */
 export interface NetworkErrorOptions {
-  /** Configuración de la petición que falló por red. */
+  /** Configuration of the request that failed at the transport level. */
   config?: RequestConfig;
-  /** Causa original (por ejemplo, el `TypeError` que lanza `fetch` ante un fallo de red). */
+  /** Original cause (for instance, the `TypeError` `fetch` throws on network failure). */
   cause?: unknown;
 }
 
 /**
- * Error lanzado cuando la petición no puede completarse por un problema de red
- * (servidor inalcanzable, sin conexión, DNS, etc.).
+ * Thrown when a request cannot complete because of a transport problem
+ * (unreachable server, no connectivity, DNS failure, ...).
  */
 export class NetworkError extends SmartFetchError {
   /**
-   * @param message - Mensaje descriptivo del fallo de red.
-   * @param options - Metadatos opcionales del error.
+   * @param message - Human-readable description of the network failure.
+   * @param options - Optional error metadata.
    */
   constructor(
-    message = 'Error de red al intentar realizar la petición',
+    message = 'Network error while performing the request',
     options: NetworkErrorOptions = {},
   ) {
     super(message, {
@@ -175,38 +174,38 @@ export class NetworkError extends SmartFetchError {
 }
 
 /**
- * Opciones para construir un {@link HttpError}.
+ * Options for building an {@link HttpError}.
  */
 export interface HttpErrorOptions {
-  /** Configuración de la petición que produjo la respuesta de error. */
+  /** Configuration of the request that produced the error response. */
   config?: RequestConfig;
-  /** Respuesta normalizada asociada al error, si está disponible. */
+  /** Normalized response tied to the error, when available. */
   response?: SmartFetchResponse;
-  /** Causa original, si la hubo. */
+  /** Original cause, if any. */
   cause?: unknown;
 }
 
 /**
- * Error lanzado cuando el servidor responde con un código de estado HTTP que no
- * pertenece al rango de éxito (2xx), por ejemplo 404 o 500.
+ * Thrown when the server responds with a status code outside the accepted range
+ * (2xx by default) — 404 or 500, for example.
  */
 export class HttpError extends SmartFetchError {
-  /** Código de estado HTTP devuelto por el servidor. */
+  /** HTTP status code returned by the server. */
   readonly status: number;
 
-  /** Texto descriptivo del estado HTTP. */
+  /** Human-readable text of the HTTP status. */
   readonly statusText: string;
 
-  /** Respuesta normalizada asociada al error, si está disponible. */
+  /** Normalized response tied to the error, when available. */
   readonly response?: SmartFetchResponse;
 
   /**
-   * @param status - Código de estado HTTP devuelto por el servidor.
-   * @param statusText - Texto descriptivo del estado HTTP.
-   * @param options - Metadatos opcionales del error (configuración, respuesta y causa).
+   * @param status - HTTP status code returned by the server.
+   * @param statusText - Human-readable text of the HTTP status.
+   * @param options - Optional error metadata (configuration, response and cause).
    */
   constructor(status: number, statusText: string, options: HttpErrorOptions = {}) {
-    super(`La petición falló con el código de estado HTTP ${status} (${statusText})`, {
+    super(`The request failed with HTTP status ${status} (${statusText})`, {
       type: 'http',
       config: options.config,
       cause: options.cause,
@@ -219,38 +218,38 @@ export class HttpError extends SmartFetchError {
 }
 
 /**
- * Opciones para construir un {@link ParseError}.
+ * Options for building a {@link ParseError}.
  */
 export interface ParseErrorOptions {
-  /** Configuración de la petición cuya respuesta no pudo parsearse. */
+  /** Configuration of the request whose response could not be parsed. */
   config?: RequestConfig;
-  /** Formato en el que se intentó interpretar el cuerpo. */
+  /** Format the body was read as. */
   responseType?: ResponseType;
-  /** Texto crudo del cuerpo que no pudo interpretarse (útil para depurar). */
+  /** Raw body text that could not be interpreted (useful when debugging). */
   text?: string;
-  /** Causa original (por ejemplo, el `SyntaxError` de `JSON.parse`). */
+  /** Original cause (for instance, the `SyntaxError` from `JSON.parse`). */
   cause?: unknown;
 }
 
 /**
- * Error lanzado cuando el cuerpo de una respuesta satisfactoria no puede
- * interpretarse en el formato solicitado, típicamente JSON malformado.
+ * Thrown when the body of an accepted response cannot be read in the requested
+ * format — typically malformed JSON.
  *
- * En las respuestas de error (fuera del rango aceptado) prevalece
- * {@link HttpError} y el cuerpo crudo se adjunta como `data`, por lo que este
- * error no se emite en ese caso: solo surge cuando la respuesta se considera
- * satisfactoria pero su cuerpo es ilegible.
+ * On error responses (outside the accepted range) {@link HttpError} takes
+ * precedence and the raw body is attached as `data`, so this error is not raised
+ * there: it only surfaces when the response counts as successful but its body is
+ * unreadable.
  */
 export class ParseError extends SmartFetchError {
-  /** Formato en el que se intentó interpretar el cuerpo. */
+  /** Format the body was read as. */
   readonly responseType: ResponseType;
 
-  /** Texto crudo del cuerpo que no pudo interpretarse, si está disponible. */
+  /** Raw body text that could not be interpreted, when available. */
   readonly text?: string;
 
   /**
-   * @param message - Mensaje descriptivo del fallo de parseo.
-   * @param options - Metadatos opcionales del error (configuración, formato, texto crudo y causa).
+   * @param message - Human-readable description of the parse failure.
+   * @param options - Optional error metadata (configuration, format, raw text and cause).
    */
   constructor(message: string, options: ParseErrorOptions = {}) {
     super(message, {

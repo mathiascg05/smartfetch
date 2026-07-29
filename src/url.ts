@@ -1,26 +1,27 @@
 /**
- * Construcción de la URL final de una petición.
+ * Building the final request URL.
  *
- * Este módulo concentra la lógica pura de resolución de URLs: combina la
- * `baseURL` con la ruta del recurso y anexa los parámetros de consulta
- * (`params`). Al no depender de `fetch` ni de ningún estado, es fácil de probar
- * de forma aislada.
+ * This module concentrates the pure URL-resolution logic: it combines the
+ * `baseURL` with the resource path and appends the query-string parameters
+ * (`params`). Depending on neither `fetch` nor any state, it is trivial to test in
+ * isolation.
  *
  * @module url
  */
 
 import type { QueryParamValue, RequestConfig } from './types.js';
 
-/** Detecta si una URL es absoluta (incluye esquema http/https). */
+/** Detects whether a URL is absolute (carries an http/https scheme). */
 const ABSOLUTE_URL = /^https?:\/\//i;
 
 /**
- * Combina la `baseURL` con la `url` del recurso.
+ * Combines the `baseURL` with the resource `url`.
  *
- * - Si `url` es absoluta (comienza por `http://` o `https://`), se usa tal cual
- *   y se ignora la `baseURL`.
- * - Si no hay `baseURL`, se devuelve `url` (o cadena vacía).
- * - En otro caso se unen normalizando la barra para no duplicarla ni perderla.
+ * - If `url` is absolute (starts with `http://` or `https://`), it is used as-is
+ *   and `baseURL` is ignored.
+ * - If there is no `baseURL`, `url` is returned (or an empty string).
+ * - Otherwise both are joined, normalizing the slash so it is neither duplicated
+ *   nor lost.
  */
 function resolveURL(baseURL: string | undefined, url: string): string {
   if (ABSOLUTE_URL.test(url)) {
@@ -38,8 +39,8 @@ function resolveURL(baseURL: string | undefined, url: string): string {
 }
 
 /**
- * Anexa un único parámetro al {@link URLSearchParams}, omitiendo `null`/`undefined`
- * y convirtiendo números y booleanos a texto.
+ * Appends a single parameter to the {@link URLSearchParams}, skipping
+ * `null`/`undefined` and stringifying numbers and booleans.
  */
 function appendParam(search: URLSearchParams, key: string, value: QueryParamValue): void {
   if (value === null || value === undefined) {
@@ -49,12 +50,12 @@ function appendParam(search: URLSearchParams, key: string, value: QueryParamValu
 }
 
 /**
- * Construye la URL final de una petición a partir de su configuración.
+ * Builds the final request URL from its configuration.
  *
- * Combina {@link RequestConfig.baseURL} y {@link RequestConfig.url}, y anexa los
- * {@link RequestConfig.params} preservando cualquier query ya presente en la URL.
- * Un valor de tipo arreglo genera una entrada repetida por cada elemento; los
- * valores `null`/`undefined` se omiten.
+ * Combines {@link RequestConfig.baseURL} and {@link RequestConfig.url}, then
+ * appends {@link RequestConfig.params} while preserving any query already present
+ * in the URL. An array value emits one repeated entry per element;
+ * `null`/`undefined` values are skipped.
  *
  * @example
  * buildURL({ baseURL: 'https://api.x.com/v1', url: '/users', params: { page: 2, tags: ['a', 'b'] } });
@@ -67,7 +68,7 @@ export function buildURL(config: RequestConfig): string {
     return resolved;
   }
 
-  // Separa una posible query ya presente en la URL para fusionarla con `params`.
+  // Splits off any query already present in the URL so it can be merged with `params`.
   const hashIndex = resolved.indexOf('#');
   const hash = hashIndex >= 0 ? resolved.slice(hashIndex) : '';
   const withoutHash = hashIndex >= 0 ? resolved.slice(0, hashIndex) : resolved;

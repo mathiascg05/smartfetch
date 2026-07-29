@@ -1,327 +1,380 @@
 # SmartFetch
 
-Wrapper avanzado y resiliente sobre la API nativa **`fetch`**, escrito en **TypeScript** y
-**sin dependencias de terceros**. Ofrece una interfaz limpia y de alto nivel (estilo `axios`)
-apoyándose en `fetch` por debajo: timeout configurable, reintentos automáticos con estrategias
-de espera, métodos HTTP completos, interceptores y un modelo de errores tipado.
+[![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
+[![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
+[![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
+[![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
-> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18** · **ESM + CJS** · async/await y Promesas
+A resilient wrapper around the native **`fetch`** API, written in **TypeScript** with **zero
+runtime dependencies**. It offers a clean, high-level interface (axios-style) built on `fetch`
+underneath: configurable timeouts, automatic retries with pluggable wait strategies, the full set
+of HTTP verbs, interceptors and a typed error model.
 
-## Índice
+> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18** · **ESM + CJS** · async/await and Promises
 
-- [Instalación](#instalación)
-- [Uso rápido](#uso-rápido)
-- [Creación de clientes](#creación-de-clientes)
+🇪🇸 [Léeme en español](./README.es.md)
+
+## Contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Creating clients](#creating-clients)
 - [Timeout](#timeout)
-- [Reintentos y backoff](#reintentos-y-backoff)
-- [Parseo y `validateStatus`](#parseo-y-validatestatus)
-- [Interceptores (AOP)](#interceptores-programación-orientada-a-aspectos)
-- [Referencia de configuración](#referencia-de-configuración)
-- [Respuesta y errores](#respuesta-y-errores)
-- [Patrones de diseño](#patrones-de-diseño)
-- [Proyecto académico](#proyecto-académico)
-- [Licencia](#licencia)
+- [Retries and backoff](#retries-and-backoff)
+- [Parsing and `validateStatus`](#parsing-and-validatestatus)
+- [Interceptors](#interceptors)
+- [Configuration reference](#configuration-reference)
+- [Response and errors](#response-and-errors)
+- [Design patterns](#design-patterns)
+- [Limitations and non-goals](#limitations-and-non-goals)
+- [Testing](#testing)
+- [Origin](#origin)
+- [License](#license)
 
-## Instalación
+## Installation
 
-SmartFetch usa `fetch` nativo, por lo que requiere **Node.js ≥ 18** (o cualquier runtime moderno
-con `fetch` global). La librería aún no se publica en el registro de npm; se instala directamente
-desde GitHub:
+SmartFetch uses the native `fetch`, so it needs **Node.js ≥ 18** (or any modern runtime with a
+global `fetch`).
 
 ```bash
-# Instalar desde el repositorio (rama por defecto)
+npm install @mathiascg05/smartfetch
+```
+
+It can also be installed straight from the repository:
+
+```bash
 npm install github:mathiascg05/smartfetch
 ```
 
-Alternativamente, empaquetar y luego instalar el tarball generado:
-
-```bash
-git clone https://github.com/mathiascg05/smartfetch.git
-cd smartfetch
-npm install
-npm run build      # genera dist/ (ESM + CJS + tipos)
-npm pack           # crea smartfetch-<version>.tgz
-# en tu proyecto:
-npm install /ruta/a/smartfetch-<version>.tgz
-```
-
-El paquete expone **ESM** (`dist/index.js`), **CommonJS** (`dist/index.cjs`) y declaraciones de
-tipos (`dist/index.d.ts`), así que funciona tanto con `import` como con `require`:
+The package ships **ESM** (`dist/index.js`), **CommonJS** (`dist/index.cjs`) and type declarations
+(`dist/index.d.ts`), so it works with both `import` and `require`:
 
 ```ts
-import smartfetch, { SmartFetch } from 'smartfetch';   // ESM / TypeScript
+import smartfetch, { SmartFetch } from '@mathiascg05/smartfetch'; // ESM / TypeScript
 ```
 
 ```js
-const { SmartFetch } = require('smartfetch');           // CommonJS
+const { SmartFetch } = require('@mathiascg05/smartfetch'); // CommonJS
 ```
 
-## Uso rápido
+## Quick start
 
 ```ts
-import { SmartFetch, HttpError, ParseError } from 'smartfetch';
+import { SmartFetch, HttpError, ParseError } from '@mathiascg05/smartfetch';
 
-const client = new SmartFetch({ baseURL: 'https://api.ejemplo.com' });
+const client = new SmartFetch({ baseURL: 'https://api.example.com' });
 
-// GET con parámetros de consulta y tipado del cuerpo de la respuesta.
-const { data, status } = await client.get<Usuario[]>('/usuarios', { params: { page: 1 } });
+// GET with query parameters and a typed response body.
+const { data, status } = await client.get<User[]>('/users', { params: { page: 1 } });
 console.log(status, data);
 
-// POST/PUT/PATCH: el cuerpo va como 2º argumento (estilo axios). Si es un objeto
-// plano se serializa a JSON y se añade Content-Type: application/json automáticamente.
-const creado = await client.post<Usuario>('/usuarios', { nombre: 'Ada' });
-await client.put<Usuario>('/usuarios/1', { nombre: 'Ada Lovelace' });
-await client.patch<Usuario>('/usuarios/1', { activo: false });
+// POST/PUT/PATCH: the body is the 2nd argument (axios-style). Plain objects are
+// serialized to JSON and get a Content-Type: application/json header automatically.
+const created = await client.post<User>('/users', { name: 'Ada' });
+await client.put<User>('/users/1', { name: 'Ada Lovelace' });
+await client.patch<User>('/users/1', { active: false });
 
-// DELETE no recibe cuerpo posicional.
-await client.delete('/usuarios/1');
+// DELETE takes no positional body.
+await client.delete('/users/1');
 
-// Errores controlados: HTTP (4xx/5xx), de red y de parseo del cuerpo.
+// Typed failures: HTTP (4xx/5xx), network and body-parsing errors.
 try {
-  await client.get('/usuarios/999');
+  await client.get('/users/999');
 } catch (error) {
   if (error instanceof HttpError) {
     console.error('HTTP', error.status, error.response?.data);
   } else if (error instanceof ParseError) {
-    // El cuerpo de una respuesta satisfactoria no era JSON válido.
-    console.error('Parseo', error.responseType, error.text);
+    // The body of a successful response was not valid JSON.
+    console.error('Parse', error.responseType, error.text);
   }
 }
 ```
 
-Cada método devuelve una **`Promise`**, así que funcionan por igual `async/await` y las cadenas
-`.then()`/`.catch()`:
+Every method returns a **`Promise`**, so `async/await` and `.then()`/`.catch()` chains work equally
+well:
 
 ```ts
 client
-  .get<Usuario[]>('/usuarios')
+  .get<User[]>('/users')
   .then((res) => console.log(res.data))
   .catch((err) => console.error(err));
 ```
 
-La respuesta es un `SmartFetchResponse<T>` con `data`, `status`, `statusText`, `headers`, `ok`,
-`url`, `config` y `raw` (el `Response` nativo). Por defecto el cuerpo se parsea como JSON; puede
-cambiarse con `responseType: 'text' | 'blob' | 'arrayBuffer' | 'formData'`. Los estados sin cuerpo
-(204/205/304) devuelven `data === null` en cualquier formato. El `fetch` subyacente es inyectable
-(`new SmartFetch(defaults, { fetch })`) siguiendo el patrón Adapter.
+The response is a `SmartFetchResponse<T>` carrying `data`, `status`, `statusText`, `headers`, `ok`,
+`url`, `config` and `raw` (the native `Response`). The body is parsed as JSON by default; that can
+be changed with `responseType: 'text' | 'blob' | 'arrayBuffer' | 'formData'`. Body-less statuses
+(204/205/304) yield `data === null` in every format. The underlying `fetch` is injectable
+(`new SmartFetch(defaults, { fetch })`) following the Adapter pattern.
 
-## Creación de clientes
+## Creating clients
 
-Además de `new SmartFetch(...)`, la librería ofrece dos formas de crear clientes y una instancia
-lista para usar:
+Besides `new SmartFetch(...)`, the library offers two ways to create clients plus a ready-to-use
+instance:
 
 ```ts
-import smartfetch, { createClient, SmartFetchBuilder, ExponentialBackoff } from 'smartfetch';
+import smartfetch, {
+  createClient,
+  SmartFetchBuilder,
+  ExponentialBackoff,
+} from '@mathiascg05/smartfetch';
 
-// 1) Factory: crea un cliente sin usar `new`.
-const api = createClient({ baseURL: 'https://api.ejemplo.com', timeout: 5000 });
+// 1) Factory: creates a client without `new`.
+const api = createClient({ baseURL: 'https://api.example.com', timeout: 5000 });
 
-// 2) Builder: compone la configuración paso a paso (fluent API).
+// 2) Builder: composes the configuration step by step (fluent API).
 const api2 = new SmartFetchBuilder()
-  .baseURL('https://api.ejemplo.com')
+  .baseURL('https://api.example.com')
   .header('Authorization', 'Bearer token')
   .timeout(5000)
   .retries(2)
   .backoff(new ExponentialBackoff())
   .build();
 
-// 3) Singleton: instancia por defecto (default export) para llamadas rápidas.
-const { data } = await smartfetch.get('https://api.ejemplo.com/estado');
+// 3) Singleton: the default instance (default export) for quick one-off calls.
+const { data } = await smartfetch.get('https://api.example.com/status');
 ```
 
-`createClient` (patrón **Factory**) y `SmartFetchBuilder` (patrón **Builder**) producen ambos una
-instancia de `SmartFetch`; el `default export` `smartfetch` es un cliente por defecto (patrón
-**Singleton**) sin configuración base, útil para peticiones puntuales con URLs absolutas.
+`createClient` (**Factory** pattern) and `SmartFetchBuilder` (**Builder** pattern) both produce a
+`SmartFetch` instance; the default export `smartfetch` is an unconfigured default client
+(**Singleton** pattern), handy for one-off requests with absolute URLs.
 
 ## Timeout
 
-`timeout` (en milisegundos) cancela la petición y lanza un `TimeoutError` si el servidor no
-responde a tiempo. La cancelación se implementa internamente con `AbortController`. Un valor de
-`0` o su omisión significan **sin límite de tiempo**.
+`timeout` (in milliseconds) cancels the request and throws a `TimeoutError` if the server does not
+answer in time. Cancellation is implemented internally with `AbortController`. A value of `0`, or
+omitting it, means **no deadline**.
 
 ```ts
-import { TimeoutError } from 'smartfetch';
+import { TimeoutError } from '@mathiascg05/smartfetch';
 
 try {
-  await client.get('/lento', { timeout: 2000 }); // aborta a los 2 s
+  await client.get('/slow', { timeout: 2000 }); // aborts after 2 s
 } catch (error) {
   if (error instanceof TimeoutError) {
-    console.error(`La petición superó los ${error.timeout} ms`);
+    console.error(`The request exceeded ${error.timeout} ms`);
   }
 }
 ```
 
-Si pasas tu propia `signal` (`AbortSignal`), se combina con el timeout interno: aborta lo que
-ocurra primero. Un aborto externo se propaga tal cual (no se traduce a `TimeoutError`).
+If you pass your own `signal` (`AbortSignal`), it is combined with the internal timeout: whichever
+fires first aborts the request. An external abort propagates as-is (it is not translated into a
+`TimeoutError`).
 
-## Reintentos y backoff
+## Retries and backoff
 
-SmartFetch reintenta automáticamente las peticiones que fallan de forma **transitoria**. Por
-defecto `retries: 0` (un solo intento, como exige el enunciado). La política por defecto
-reintenta **solo** ante:
+SmartFetch automatically retries requests that fail **transiently**. The default is `retries: 0`
+(a single attempt). The default policy retries **only** on:
 
-- errores de red (`NetworkError`), y
-- respuestas HTTP **5xx** (`HttpError` con `status` 500–599).
+- network errors (`NetworkError`), and
+- HTTP **5xx** responses (`HttpError` with `status` 500–599).
 
-**No** reintenta ante timeouts, errores 4xx ni errores de parseo (`ParseError`).
+It does **not** retry timeouts, 4xx errors or parsing errors (`ParseError`).
 
 ```ts
-import { SmartFetch, FixedBackoff, ExponentialBackoff } from 'smartfetch';
+import { SmartFetch, FixedBackoff, ExponentialBackoff } from '@mathiascg05/smartfetch';
 
-// 2 reintentos (3 intentos en total) con espera exponencial: 100 ms, 200 ms, 400 ms...
+// 2 retries (3 attempts total) with exponential waits: 100 ms, 200 ms, 400 ms...
 const client = new SmartFetch({
-  baseURL: 'https://api.ejemplo.com',
+  baseURL: 'https://api.example.com',
   retries: 2,
-  backoff: new ExponentialBackoff(100),   // baseMs = 100, maxMs = Infinity
+  backoff: new ExponentialBackoff(100), // baseMs = 100, maxMs = Infinity
 });
 
-// Espera fija entre reintentos (patrón Strategy intercambiable).
-const otro = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
+// Fixed wait between retries (interchangeable Strategy pattern).
+const other = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
 ```
 
-La estrategia de espera es un **Strategy** intercambiable (`BackoffStrategy`):
-`FixedBackoff(delayMs = 0)` y `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. La espera de
-backoff es cancelable por la `signal` externa.
+The wait strategy is an interchangeable **Strategy** (`BackoffStrategy`):
+`FixedBackoff(delayMs = 0)` and `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. The backoff
+wait is cancellable through the external `signal`.
 
-Para políticas a medida, `retryOn` reemplaza la decisión por defecto:
+For custom policies, `retryOn` replaces the default decision:
 
 ```ts
-// Reintentar también en 429 (Too Many Requests), hasta 4 intentos.
-await client.get('/recurso', {
+// Also retry on 429 (Too Many Requests), up to 4 attempts.
+await client.get('/resource', {
   retries: 3,
   retryOn: (error, attempt) =>
     error instanceof HttpError && (error.status === 429 || error.status >= 500),
 });
 ```
 
-## Parseo y `validateStatus`
+## Parsing and `validateStatus`
 
-Un cuerpo ilegible en el formato solicitado (p. ej. JSON malformado) en una respuesta **aceptada**
-lanza un `ParseError` (con `responseType`, el `text` crudo y la `cause` original). En una respuesta
-**de error**, en cambio, prevalece el `HttpError` y el cuerpo crudo queda disponible en
-`error.response?.data`, para no ocultar el fallo HTTP tras un problema de parseo.
+An unreadable body in the requested format (malformed JSON, for instance) on an **accepted**
+response throws a `ParseError` (carrying `responseType`, the raw `text` and the original `cause`).
+On an **error** response, the `HttpError` takes precedence instead and the raw body stays available
+in `error.response?.data`, so a parsing problem never hides the HTTP failure.
 
-Por defecto solo el rango **2xx** se considera satisfactorio; puede redefinirse por petición con
-`validateStatus`, que decide qué códigos se aceptan (resuelven) y cuáles se rechazan con `HttpError`:
+By default only the **2xx** range counts as successful; this can be redefined per request with
+`validateStatus`, which decides which codes are accepted (resolve) and which are rejected with an
+`HttpError`:
 
 ```ts
-// Aceptar también 304 (Not Modified) como éxito.
-await client.get('/recurso', {
+// Accept 304 (Not Modified) as a success too.
+await client.get('/resource', {
   validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
 });
 ```
 
-## Interceptores (Programación Orientada a Aspectos)
+## Interceptors
 
-Los interceptores permiten tratar de forma centralizada preocupaciones transversales —logging,
-autenticación, transformación de datos o recuperación de errores— sin tocar el núcleo del cliente.
+Interceptors let you handle cross-cutting concerns — logging, authentication, data transformation,
+error recovery — centrally, without touching the client core.
 
 ```ts
-// Interceptor de petición: se ejecuta antes de enviar. Ideal para autenticación o logging.
+// Request interceptor: runs before sending. Ideal for auth or logging.
 const authId = client.interceptors.request.use((config) => {
   config.headers = { ...config.headers, Authorization: 'Bearer ' + token };
   return config;
 });
 
-// Interceptor de respuesta: transforma la respuesta ya recibida.
+// Response interceptor: transforms the response once received.
 client.interceptors.response.use((response) => {
   console.log(`${response.config.method} ${response.url} -> ${response.status}`);
   return response;
 });
 
-// El 2º argumento maneja errores y puede recuperarse devolviendo una respuesta de fallback.
+// The 2nd argument handles errors and can recover by returning a fallback response.
 client.interceptors.response.use(undefined, (error) => {
   if (error instanceof HttpError && error.status >= 500) {
     return { ...error.response, data: { offline: true } };
   }
-  throw error; // se relanza para propagarlo si no se puede recuperar
+  throw error; // rethrown to propagate when recovery is not possible
 });
 
-// use() devuelve un id para eliminar el interceptor más tarde.
+// use() returns an id for removing the interceptor later.
 client.interceptors.request.eject(authId);
 ```
 
-Los interceptores de petición se ejecutan en orden inverso al de registro (LIFO) y los de respuesta
-en orden de registro (FIFO), igual que en `axios`.
+Request interceptors run in reverse registration order (LIFO) and response interceptors in
+registration order (FIFO), matching `axios`.
 
-## Referencia de configuración
+## Configuration reference
 
-`RequestConfig` (todos los campos son opcionales). Se puede pasar como configuración por defecto
-del cliente y/o por petición; los valores de la petición se fusionan sobre los del cliente.
+`RequestConfig` (every field is optional). It can be supplied as the client's default configuration
+and/or per request; request values are merged over the client ones.
 
-| Opción | Tipo | Descripción |
-|---|---|---|
-| `baseURL` | `string` | URL base a la que se resuelven las rutas relativas. |
-| `url` | `string` | Ruta o URL de la petición (normalmente va como 1er argumento del método). |
-| `method` | `HttpMethod` | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`. |
-| `headers` | `Record<string, string>` | Cabeceras HTTP. |
-| `params` | `QueryParams` | Parámetros de consulta (se serializan a query string; admite arrays). |
-| `body` | `unknown` | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`. |
-| `timeout` | `number` | Milisegundos antes de abortar (`0`/omitido = sin límite). |
-| `retries` | `number` | Reintentos ante fallo transitorio (default `0` = un intento). |
-| `backoff` | `BackoffStrategy` | Estrategia de espera entre reintentos (Strategy). |
-| `retryOn` | `RetryPredicate` | Predicado `(error, attempt) => boolean` que sustituye la política por defecto. |
-| `responseType` | `ResponseType` | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`. |
-| `validateStatus` | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx). |
-| `signal` | `AbortSignal` | Señal externa para cancelar la petición. |
+| Option           | Type                          | Description                                                                   |
+| ---------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| `baseURL`        | `string`                      | Base URL that relative paths resolve against.                                 |
+| `url`            | `string`                      | Request path or URL (normally the 1st argument of each method).               |
+| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                              |
+| `headers`        | `Record<string, string>`      | HTTP headers.                                                                 |
+| `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported).            |
+| `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`. |
+| `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                     |
+| `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt).                    |
+| `backoff`        | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                     |
+| `retryOn`        | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.         |
+| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.          |
+| `validateStatus` | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                            |
+| `signal`         | `AbortSignal`                 | External signal for cancelling the request.                                   |
 
-El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
+The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
 
-## Respuesta y errores
+## Response and errors
 
-Cada método resuelve con un `SmartFetchResponse<T>`:
+Every method resolves with a `SmartFetchResponse<T>`:
 
-| Campo | Tipo | Descripción |
-|---|---|---|
-| `data` | `T` | Cuerpo ya parseado según `responseType` (`null` en 204/205/304). |
-| `status` | `number` | Código de estado HTTP. |
-| `statusText` | `string` | Texto del estado. |
-| `headers` | `Record<string, string>` | Cabeceras de la respuesta. |
-| `ok` | `boolean` | `true` si el estado se consideró satisfactorio. |
-| `url` | `string` | URL final de la petición. |
-| `config` | `RequestConfig` | Configuración efectiva usada. |
-| `raw` | `Response` | El `Response` nativo sin procesar. |
+| Field        | Type                     | Description                                                      |
+| ------------ | ------------------------ | ---------------------------------------------------------------- |
+| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304). |
+| `status`     | `number`                 | HTTP status code.                                                |
+| `statusText` | `string`                 | Status text.                                                     |
+| `headers`    | `Record<string, string>` | Response headers.                                                |
+| `ok`         | `boolean`                | `true` when the status counted as successful.                    |
+| `url`        | `string`                 | Final request URL.                                               |
+| `config`     | `RequestConfig`          | Effective configuration used.                                    |
+| `raw`        | `Response`               | The untouched native `Response`.                                 |
 
-Los fallos se normalizan a una jerarquía de errores tipada. Todos extienden `SmartFetchError`,
-que expone el discriminador `type` y guards para estrechar el tipo:
+Failures are normalized into a typed error hierarchy. Everything extends `SmartFetchError`, which
+exposes the `type` discriminator plus guards for narrowing:
 
-| Error | `type` | Guard | Campos propios |
-|---|---|---|---|
-| `TimeoutError` | `'timeout'` | `isTimeout()` | `timeout` |
-| `NetworkError` | `'network'` | `isNetwork()` | — |
-| `HttpError` | `'http'` | `isHttp()` | `status`, `statusText`, `response?` |
-| `ParseError` | `'parse'` | `isParse()` | `responseType`, `text?` |
+| Error          | `type`      | Guard         | Own fields                          |
+| -------------- | ----------- | ------------- | ----------------------------------- |
+| `TimeoutError` | `'timeout'` | `isTimeout()` | `timeout`                           |
+| `NetworkError` | `'network'` | `isNetwork()` | —                                   |
+| `HttpError`    | `'http'`    | `isHttp()`    | `status`, `statusText`, `response?` |
+| `ParseError`   | `'parse'`   | `isParse()`   | `responseType`, `text?`             |
 
 ```ts
 try {
-  await client.get('/recurso');
+  await client.get('/resource');
 } catch (e) {
   if (e instanceof SmartFetchError) {
     switch (e.type) {
-      case 'http':    /* e.status, e.response?.data */ break;
-      case 'timeout': /* e.timeout */ break;
-      case 'network': /* fallo de conexión */ break;
-      case 'parse':   /* e.responseType, e.text */ break;
+      case 'http':
+        /* e.status, e.response?.data */ break;
+      case 'timeout':
+        /* e.timeout */ break;
+      case 'network':
+        /* connection failure */ break;
+      case 'parse':
+        /* e.responseType, e.text */ break;
     }
   }
 }
 ```
 
-Todos comparten además `config` (la petición que falló) y `cause` (el error original, si lo hubo).
+They all additionally carry `config` (the request that failed) and `cause` (the original error, if
+any).
 
-## Patrones de diseño
+## Design patterns
 
-- **Adapter** — el cliente envuelve `fetch` nativo tras una interfaz propia e inyectable.
-- **Strategy** — `FixedBackoff` / `ExponentialBackoff`: espera entre reintentos intercambiable.
-- **Factory / Builder** — `createClient()` y `SmartFetchBuilder` para construir clientes.
-- **Singleton** — instancia por defecto exportada (`import smartfetch from 'smartfetch'`).
-- **Interceptores (AOP)** — hooks de petición/respuesta para preocupaciones transversales.
+- **Adapter** — the client wraps the native `fetch` behind its own injectable interface.
+- **Strategy** — `FixedBackoff` / `ExponentialBackoff`: interchangeable waits between retries.
+- **Factory / Builder** — `createClient()` and `SmartFetchBuilder` for constructing clients.
+- **Singleton** — the exported default instance (`import smartfetch from '@mathiascg05/smartfetch'`).
+- **Interceptors (AOP)** — request/response hooks for cross-cutting concerns.
 
-## Proyecto académico
+## Limitations and non-goals
 
-Librería desarrollada como proyecto de la materia **Tópicos Especiales de Programación**.
+SmartFetch is deliberately small. These are the things it does **not** do today — worth knowing
+before adopting it:
 
-## Licencia
+- **No `RequestInit` passthrough for `credentials` / `mode` / `cache` / `redirect` / `keepalive`.**
+  In practice this means **cookie-based authentication in the browser is not supported**.
+- **No `HEAD` or `OPTIONS`** — only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`.
+- **Headers only as `Record<string, string>`** — no `Headers` instances and no repeated
+  multi-value headers.
+- **The `Retry-After` header is not honoured** on 429/503; the configured backoff always wins.
+- **`ExponentialBackoff` applies no jitter**, so concurrent clients can retry in lockstep.
+- **Tested on Node ≥ 18 only.** The code is runtime-agnostic and should work in browsers and edge
+  runtimes, but no browser test suite backs that claim.
 
-MIT
+For production workloads needing any of the above, [axios](https://github.com/axios/axios),
+[ky](https://github.com/sindresorhus/ky) or [ofetch](https://github.com/unjs/ofetch) are more
+complete choices.
+
+## Testing
+
+```bash
+npm install
+npm run lint          # ESLint + Prettier rules
+npm run typecheck     # tsc --noEmit
+npm run test          # Jest (ESM)
+npm run test:coverage # enforces a 100% threshold
+npm run build         # dist/ (ESM + CJS + types)
+npm run example       # end-to-end smoke test against a real API
+```
+
+The suite is 117 tests across 9 files and covers 100% of statements, branches, functions and lines.
+That threshold is enforced by `jest.config.mjs`, so an uncovered branch fails CI rather than
+quietly eroding the number.
+
+## Origin
+
+Originally built as a university project for _Tópicos Especiales de Programación_, and maintained
+since as an open-source learning project.
+
+### Acknowledgments
+
+Thanks to [@sjrisquez](https://github.com/sjrisquez), team partner during the academic phase of the
+project.
+
+## License
+
+[MIT](./LICENSE)

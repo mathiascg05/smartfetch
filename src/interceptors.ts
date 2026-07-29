@@ -1,87 +1,85 @@
 /**
- * Interceptores de SmartFetch (Programación Orientada a Aspectos).
+ * SmartFetch interceptors (aspect-oriented programming).
  *
- * Un interceptor es un enganche (*hook*) que se ejecuta antes de enviar la
- * petición o después de recibir la respuesta, permitiendo tratar de forma
- * centralizada preocupaciones transversales (*cross-cutting concerns*) como el
- * registro (logging), la autenticación, la transformación de datos o la
- * recuperación ante errores, **sin** modificar el núcleo del cliente. Esta es la
- * pieza que materializa la Programación Orientada a Aspectos (AOP) en la librería.
+ * An interceptor is a hook that runs before the request is sent or after the
+ * response arrives, letting cross-cutting concerns — logging, authentication,
+ * data transformation, error recovery — be handled centrally **without** touching
+ * the client core. This is the piece that realizes aspect-oriented programming
+ * (AOP) in the library.
  *
- * {@link InterceptorManager} administra la cadena de interceptores de un tipo
- * concreto (petición o respuesta) y es reutilizado por el cliente para ambos.
+ * {@link InterceptorManager} owns the chain for one kind of interceptor (request
+ * or response) and is reused by the client for both.
  *
  * @module interceptors
  */
 
 /**
- * Función que se ejecuta cuando el valor interceptado está disponible.
+ * Handler invoked once the intercepted value is available.
  *
- * Recibe el valor (la configuración de la petición o la respuesta, según la
- * cadena) y devuelve el valor —posiblemente transformado— que continuará por la
- * cadena. Puede ser asíncrona.
+ * Receives the value (the request configuration or the response, depending on the
+ * chain) and returns the — possibly transformed — value that continues down the
+ * chain. May be asynchronous.
  *
- * @typeParam V - Tipo del valor interceptado.
- * @param value - Valor actual que fluye por la cadena.
- * @returns El valor (transformado o no) que se pasará al siguiente eslabón.
+ * @typeParam V - Type of the intercepted value.
+ * @param value - Current value flowing through the chain.
+ * @returns The value, transformed or not, passed to the next link.
  */
 export type InterceptorFulfilled<V> = (value: V) => V | Promise<V>;
 
 /**
- * Función que se ejecuta cuando un eslabón anterior de la cadena falla.
+ * Handler invoked when an earlier link in the chain fails.
  *
- * Permite observar el error, transformarlo (relanzando otro) o **recuperarse**
- * de él devolviendo un valor válido, en cuyo caso la cadena continúa como si no
- * hubiera fallado.
+ * Allows observing the error, transforming it (by throwing another) or
+ * **recovering** from it by returning a valid value, in which case the chain
+ * continues as though nothing had failed.
  *
- * @param error - Error capturado en un eslabón previo.
- * @returns Un valor de recuperación, o el resultado de relanzar/propagar el error.
+ * @param error - Error captured in a previous link.
+ * @returns A recovery value, or the result of rethrowing/propagating the error.
  */
 export type InterceptorRejected = (error: unknown) => unknown;
 
 /**
- * Par de manejadores que componen un interceptor: el de éxito y el de error.
+ * Pair of handlers making up an interceptor: the success one and the error one.
  *
- * @typeParam V - Tipo del valor interceptado.
+ * @typeParam V - Type of the intercepted value.
  */
 export interface Interceptor<V> {
-  /** Manejador que se ejecuta con el valor disponible. */
+  /** Handler invoked with the available value. */
   fulfilled?: InterceptorFulfilled<V>;
-  /** Manejador que se ejecuta ante un fallo en un eslabón previo. */
+  /** Handler invoked when a previous link fails. */
   rejected?: InterceptorRejected;
 }
 
 /**
- * Administra una cadena de interceptores de un mismo tipo (petición o respuesta).
+ * Manages a chain of interceptors of a single kind (request or response).
  *
- * Modela una lista ordenada de enganches que el cliente recorre para envolver el
- * núcleo de la petición. Registrar un interceptor devuelve un identificador que
- * permite eliminarlo más tarde; la eliminación deja un hueco `null` en lugar de
- * reindexar, de modo que los identificadores ya entregados siguen siendo válidos
- * (mismo criterio que axios).
+ * Models the ordered list of hooks the client walks to wrap the request core.
+ * Registering an interceptor returns an id that can be used to remove it later;
+ * removal leaves a `null` hole rather than reindexing, so ids already handed out
+ * stay valid (the same approach axios takes).
  *
- * @typeParam V - Tipo del valor que fluye por la cadena (config o respuesta).
+ * @typeParam V - Type of the value flowing through the chain (config or response).
  *
  * @example
- * const client = new SmartFetch({ baseURL: 'https://api.ejemplo.com' });
+ * const client = new SmartFetch({ baseURL: 'https://api.example.com' });
  * const id = client.interceptors.request.use((config) => {
  *   config.headers = { ...config.headers, Authorization: 'Bearer token' };
  *   return config;
  * });
- * // ...más tarde
+ * // ...later
  * client.interceptors.request.eject(id);
  */
 export class InterceptorManager<V> {
-  /** Interceptores registrados; un hueco `null` marca uno ya eliminado. */
+  /** Registered interceptors; a `null` hole marks one that was removed. */
   private handlers: Array<Interceptor<V> | null> = [];
 
   /**
-   * Registra un interceptor en la cadena.
+   * Registers an interceptor in the chain.
    *
-   * @param fulfilled - Manejador que recibe el valor y devuelve el (posiblemente
-   *   transformado) valor que continúa por la cadena.
-   * @param rejected - Manejador opcional que atiende un fallo de un eslabón previo.
-   * @returns Un identificador para eliminar el interceptor con {@link InterceptorManager.eject}.
+   * @param fulfilled - Handler receiving the value and returning the (possibly
+   *   transformed) value that continues down the chain.
+   * @param rejected - Optional handler dealing with a failure in a previous link.
+   * @returns An id for removing the interceptor with {@link InterceptorManager.eject}.
    */
   use(fulfilled?: InterceptorFulfilled<V>, rejected?: InterceptorRejected): number {
     this.handlers.push({ fulfilled, rejected });
@@ -89,13 +87,12 @@ export class InterceptorManager<V> {
   }
 
   /**
-   * Elimina el interceptor asociado al identificador dado.
+   * Removes the interceptor registered under the given id.
    *
-   * Deja un hueco `null` en lugar de reindexar, para no invalidar los
-   * identificadores previamente entregados. Si el identificador no existe o ya
-   * fue eliminado, la operación no tiene efecto.
+   * Leaves a `null` hole rather than reindexing, so previously handed-out ids stay
+   * valid. If the id does not exist or was already removed, this is a no-op.
    *
-   * @param id - Identificador devuelto por {@link InterceptorManager.use}.
+   * @param id - Id returned by {@link InterceptorManager.use}.
    */
   eject(id: number): void {
     if (this.handlers[id]) {
@@ -103,16 +100,15 @@ export class InterceptorManager<V> {
     }
   }
 
-  /** Elimina todos los interceptores registrados. */
+  /** Removes every registered interceptor. */
   clear(): void {
     this.handlers = [];
   }
 
   /**
-   * Recorre los interceptores vivos en su orden de registro, omitiendo los que
-   * ya fueron eliminados.
+   * Walks the live interceptors in registration order, skipping removed ones.
    *
-   * @param fn - Función a aplicar a cada interceptor activo.
+   * @param fn - Function applied to each active interceptor.
    */
   forEach(fn: (interceptor: Interceptor<V>) => void): void {
     for (const handler of this.handlers) {

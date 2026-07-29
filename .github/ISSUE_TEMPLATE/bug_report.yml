@@ -1,0 +1,59 @@
+name: Bug report
+description: Report something that does not behave as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please check the
+        [Limitations and non-goals](https://github.com/mathiascg05/smartfetch#limitations-and-non-goals)
+        section first — some gaps (no `credentials` passthrough, no `HEAD`/`OPTIONS`,
+        no `Retry-After` handling) are intentional and are tracked as feature requests
+        rather than bugs.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: >
+        The smallest snippet that shows the problem. A failing test case is the most
+        useful thing you can attach.
+      render: ts
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SmartFetch version
+      placeholder: 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: v20.11.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Node.js
+        - Browser
+        - Edge runtime (Vercel, Cloudflare, Deno, ...)
+        - Other
+    validations:
+      required: true

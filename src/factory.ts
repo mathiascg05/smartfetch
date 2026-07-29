@@ -1,19 +1,18 @@
 /**
- * Fábrica y constructor fluido de clientes SmartFetch.
+ * Factory and fluent builder for SmartFetch clients.
  *
- * Este módulo materializa dos patrones de diseño valorados por el proyecto:
+ * This module realizes two creation patterns:
  *
- * - **Factory** — {@link createClient} crea instancias de {@link SmartFetch} sin
- *   que quien la consume tenga que usar `new` ni conocer el orden de argumentos
- *   del constructor.
- * - **Builder** — {@link SmartFetchBuilder} permite componer la configuración
- *   de un cliente paso a paso mediante una interfaz encadenable (fluent API) y
- *   materializarla al final con {@link SmartFetchBuilder.build}.
+ * - **Factory** — {@link createClient} produces {@link SmartFetch} instances
+ *   without the caller needing `new` or knowing the constructor's argument order.
+ * - **Builder** — {@link SmartFetchBuilder} composes a client's configuration
+ *   step by step through a chainable (fluent) API, materializing it at the end
+ *   with {@link SmartFetchBuilder.build}.
  *
- * Ninguno de los dos reimplementa la fusión de configuración: se limitan a armar
- * el {@link RequestConfig} por defecto y las {@link SmartFetchOptions} que recibe
- * el constructor de {@link SmartFetch}; el propio cliente ya fusiona esos valores
- * por defecto con los de cada petición.
+ * Neither reimplements configuration merging: they only assemble the default
+ * {@link RequestConfig} and the {@link SmartFetchOptions} handed to the
+ * {@link SmartFetch} constructor; the client itself merges those defaults with
+ * each request's own configuration.
  *
  * @module factory
  */
@@ -30,19 +29,19 @@ import type {
 } from './types.js';
 
 /**
- * Crea un cliente {@link SmartFetch} con una configuración por defecto.
+ * Creates a {@link SmartFetch} client with a default configuration.
  *
- * Envoltura fina sobre el constructor (patrón Factory): evita el uso directo de
- * `new` y da un punto de creación único y estable para la librería.
+ * Thin wrapper over the constructor (Factory pattern): avoids direct use of `new`
+ * and gives the library a single, stable creation point.
  *
- * @param defaults - Configuración por defecto aplicada a todas las peticiones del cliente.
- * @param options - Opciones a nivel de cliente (por ejemplo, un `fetch` inyectado).
- * @returns Una nueva instancia de {@link SmartFetch}.
+ * @param defaults - Default configuration applied to every request of the client.
+ * @param options - Client-level options (an injected `fetch`, for instance).
+ * @returns A new {@link SmartFetch} instance.
  *
  * @example
  * ```ts
- * const api = createClient({ baseURL: 'https://api.ejemplo.com', timeout: 5000 });
- * const { data } = await api.get('/usuarios');
+ * const api = createClient({ baseURL: 'https://api.example.com', timeout: 5000 });
+ * const { data } = await api.get('/users');
  * ```
  */
 export function createClient(
@@ -53,16 +52,16 @@ export function createClient(
 }
 
 /**
- * Constructor fluido de clientes {@link SmartFetch} (patrón Builder).
+ * Fluent builder for {@link SmartFetch} clients (Builder pattern).
  *
- * Acumula, mediante métodos encadenables, la configuración por defecto y las
- * opciones del cliente, y produce la instancia final al llamar a {@link build}.
- * Cada método devuelve `this`, de modo que las llamadas pueden encadenarse.
+ * Accumulates the default configuration and the client options through chainable
+ * methods, producing the final instance on {@link build}. Every method returns
+ * `this`, so calls can be chained.
  *
  * @example
  * ```ts
  * const api = new SmartFetchBuilder()
- *   .baseURL('https://api.ejemplo.com')
+ *   .baseURL('https://api.example.com')
  *   .header('Authorization', 'Bearer token')
  *   .timeout(5000)
  *   .retries(2)
@@ -71,17 +70,17 @@ export function createClient(
  * ```
  */
 export class SmartFetchBuilder {
-  /** Configuración por defecto acumulada para el cliente. */
+  /** Default configuration accumulated for the client. */
   private readonly config: RequestConfig = {};
 
-  /** Opciones a nivel de cliente acumuladas. */
+  /** Client-level options accumulated so far. */
   private readonly options: SmartFetchOptions = {};
 
   /**
-   * Fija la URL base que se antepondrá a la ruta de cada petición.
+   * Sets the base URL prepended to each request path.
    *
-   * @param url - URL base (por ejemplo, `"https://api.ejemplo.com/v1"`).
-   * @returns El propio builder, para encadenar.
+   * @param url - Base URL (for example, `"https://api.example.com/v1"`).
+   * @returns The builder itself, for chaining.
    */
   baseURL(url: string): this {
     this.config.baseURL = url;
@@ -89,11 +88,11 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Añade (o sobrescribe) una única cabecera por defecto.
+   * Adds (or overwrites) a single default header.
    *
-   * @param name - Nombre de la cabecera.
-   * @param value - Valor de la cabecera.
-   * @returns El propio builder, para encadenar.
+   * @param name - Header name.
+   * @param value - Header value.
+   * @returns The builder itself, for chaining.
    */
   header(name: string, value: string): this {
     this.config.headers = { ...this.config.headers, [name]: value };
@@ -101,10 +100,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fusiona un conjunto de cabeceras por defecto con las ya acumuladas.
+   * Merges a set of default headers into the ones accumulated so far.
    *
-   * @param headers - Cabeceras a fusionar (las claves repetidas se sobrescriben).
-   * @returns El propio builder, para encadenar.
+   * @param headers - Headers to merge (repeated keys are overwritten).
+   * @returns The builder itself, for chaining.
    */
   headers(headers: HeadersInit): this {
     this.config.headers = { ...this.config.headers, ...headers };
@@ -112,10 +111,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fija el tiempo máximo de espera, en milisegundos, antes de cancelar la petición.
+   * Sets the maximum wait, in milliseconds, before aborting the request.
    *
-   * @param ms - Milisegundos de timeout (`0` significa sin límite).
-   * @returns El propio builder, para encadenar.
+   * @param ms - Timeout in milliseconds (`0` means no deadline).
+   * @returns The builder itself, for chaining.
    */
   timeout(ms: number): this {
     this.config.timeout = ms;
@@ -123,10 +122,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fija el número de reintentos adicionales ante errores de red o HTTP 5xx.
+   * Sets the number of additional retries on network or HTTP 5xx errors.
    *
-   * @param count - Número de reintentos (`0` = un único intento).
-   * @returns El propio builder, para encadenar.
+   * @param count - Number of retries (`0` = a single attempt).
+   * @returns The builder itself, for chaining.
    */
   retries(count: number): this {
     this.config.retries = count;
@@ -134,10 +133,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fija la estrategia de espera entre reintentos (patrón Strategy).
+   * Sets the wait strategy between retries (Strategy pattern).
    *
-   * @param strategy - Estrategia de backoff a utilizar.
-   * @returns El propio builder, para encadenar.
+   * @param strategy - Backoff strategy to use.
+   * @returns The builder itself, for chaining.
    */
   backoff(strategy: BackoffStrategy): this {
     this.config.backoff = strategy;
@@ -145,10 +144,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fija el predicado que decide, ante un error, si la petición debe reintentarse.
+   * Sets the predicate deciding whether a failed request should be retried.
    *
-   * @param predicate - Predicado de reintento.
-   * @returns El propio builder, para encadenar.
+   * @param predicate - Retry predicate.
+   * @returns The builder itself, for chaining.
    */
   retryOn(predicate: RetryPredicate): this {
     this.config.retryOn = predicate;
@@ -156,10 +155,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fija el formato en el que se interpretará el cuerpo de la respuesta.
+   * Sets the format the response body should be read as.
    *
-   * @param type - Tipo de respuesta (`json`, `text`, `blob`, etc.).
-   * @returns El propio builder, para encadenar.
+   * @param type - Response type (`json`, `text`, `blob`, ...).
+   * @returns The builder itself, for chaining.
    */
   responseType(type: ResponseType): this {
     this.config.responseType = type;
@@ -167,10 +166,10 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Fija la función que decide qué códigos de estado HTTP se consideran válidos.
+   * Sets the function deciding which HTTP status codes count as successful.
    *
-   * @param fn - Recibe el código de estado y devuelve `true` para aceptarlo.
-   * @returns El propio builder, para encadenar.
+   * @param fn - Receives the status code and returns `true` to accept it.
+   * @returns The builder itself, for chaining.
    */
   validateStatus(fn: (status: number) => boolean): this {
     this.config.validateStatus = fn;
@@ -178,12 +177,13 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Inyecta una implementación de `fetch` propia (patrón Adapter).
+   * Injects a custom `fetch` implementation (Adapter pattern).
    *
-   * Útil para polyfills o para mockear la red en pruebas sin tocar el `fetch` global.
+   * Useful for polyfills, or for mocking the network in tests without touching
+   * the global `fetch`.
    *
-   * @param fetchImpl - Implementación de `fetch` a utilizar.
-   * @returns El propio builder, para encadenar.
+   * @param fetchImpl - `fetch` implementation to use.
+   * @returns The builder itself, for chaining.
    */
   adapter(fetchImpl: FetchAdapter): this {
     this.options.fetch = fetchImpl;
@@ -191,9 +191,9 @@ export class SmartFetchBuilder {
   }
 
   /**
-   * Materializa la configuración acumulada en una instancia de {@link SmartFetch}.
+   * Materializes the accumulated configuration into a {@link SmartFetch} instance.
    *
-   * @returns El cliente construido.
+   * @returns The built client.
    */
   build(): SmartFetch {
     return createClient(this.config, this.options);
