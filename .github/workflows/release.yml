@@ -24,6 +24,9 @@ jobs:
       # Necesario para que npm pueda firmar la atestación de procedencia vía OIDC.
       id-token: write
 
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
     steps:
       - uses: actions/checkout@v5
 
@@ -59,7 +62,18 @@ jobs:
             exit 1
           fi
 
+      # El token no puede consultarse en un `if:` de job, así que se expone como
+      # env del job y se comprueba a nivel de paso.
       - name: Publish
+        if: env.NODE_AUTH_TOKEN != ''
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Sin token el tag sigue siendo válido y la verificación de arriba sirve
+      # igual; simplemente no se publica. Evita dejar la corrida en rojo por una
+      # credencial que aún no se ha configurado.
+      - name: Skip publish (no npm token configured)
+        if: env.NODE_AUTH_TOKEN == ''
+        run: |
+          echo "::notice::NPM_TOKEN no está configurado: se omite la publicación."
+          echo "Para publicar: añade el secreto NPM_TOKEN y configura un trusted"
+          echo "publisher en npm apuntando a este repositorio y a este workflow."
