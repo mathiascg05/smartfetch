@@ -3,6 +3,8 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
+[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.6%20kB%20gzip-brightgreen.svg)](#testing)
+[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#testing)
 [![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
 [![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -186,10 +188,29 @@ const other = new SmartFetch({ retries: 3, backoff: new FixedBackoff(500) });
 ```
 
 The wait strategy is an interchangeable **Strategy** (`BackoffStrategy`):
-`FixedBackoff(delayMs = 0)` and `ExponentialBackoff(baseMs = 100, maxMs = Infinity)`. The backoff
-wait is cancellable through the external `signal`.
+`FixedBackoff(delayMs = 0)` and `ExponentialBackoff(baseMs = 100, maxMs = Infinity, options)`. The
+backoff wait is cancellable through the external `signal`.
+
+`ExponentialBackoff` applies **jitter by default**, so clients that failed together do not retry
+together and repeat the load spike. It uses _equal jitter_: the delay lands in
+`[exponential / 2, exponential]`, which keeps a floor unlike full jitter. Disable it with
+`new ExponentialBackoff(100, Infinity, { jitter: false })` when a deterministic delay is needed.
 
 For custom policies, `retryOn` replaces the default decision:
+
+### `Retry-After`
+
+On a **429** or **503**, a server may state how long to wait through the `Retry-After` header —
+either as seconds (`Retry-After: 120`) or as an HTTP date. SmartFetch honours it and gives it
+**precedence over the configured backoff**: the server knows better than the client when it will be
+ready.
+
+The delay is capped by `maxRetryAfterMs` (default one minute) so a server asking for an hour cannot
+hang the request that long. An unparseable value falls back to the configured backoff, and the
+header is ignored on statuses where it does not mean "wait".
+
+`429` is part of the default retry policy for the same reason: it is a rate limit that clears on its
+own, not a client mistake.
 
 ```ts
 // Also retry on 429 (Too Many Requests), up to 4 attempts.
@@ -256,39 +277,76 @@ registration order (FIFO), matching `axios`.
 `RequestConfig` (every field is optional). It can be supplied as the client's default configuration
 and/or per request; request values are merged over the client ones.
 
-| Option           | Type                          | Description                                                                   |
-| ---------------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| `baseURL`        | `string`                      | Base URL that relative paths resolve against.                                 |
-| `url`            | `string`                      | Request path or URL (normally the 1st argument of each method).               |
-| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                              |
-| `headers`        | `Record<string, string>`      | HTTP headers.                                                                 |
-| `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported).            |
-| `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`. |
-| `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                     |
-| `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt).                    |
-| `backoff`        | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                     |
-| `retryOn`        | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.         |
-| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.          |
-| `validateStatus` | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                            |
-| `signal`         | `AbortSignal`                 | External signal for cancelling the request.                                   |
+| Option            | Type                          | Description                                                                                                     |
+| ----------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `baseURL`         | `string`                      | Base URL that relative paths resolve against.                                                                   |
+| `url`             | `string`                      | Request path or URL (normally the 1st argument of each method).                                                 |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                |
+| `headers`         | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below).                                   |
+| `params`          | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below). |
+| `body`            | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                   |
+| `timeout`         | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline). Bounds a single attempt.                              |
+| `totalTimeout`    | `number`                      | Milliseconds for the whole operation, backoff waits included (`0`/omitted = no global deadline).                |
+| `retries`         | `number`                      | Retries on transient failures (default `0` = one attempt). Not compatible with a stream body — see below.       |
+| `backoff`         | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                                                       |
+| `retryOn`         | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.                                           |
+| `maxRetryAfterMs` | `number`                      | Cap on a `Retry-After` delay requested by the server (default `60000`).                                         |
+| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                            |
+| `validateStatus`  | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                                                              |
+| `signal`          | `AbortSignal`                 | External signal for cancelling the request.                                                                     |
 
 The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Merge rules
+
+Client defaults and per-request configuration are combined per field:
+
+- **`headers`** merge **case-insensitively** — `content-type` and `Content-Type` are the same
+  header, so they never go out duplicated. The request's value wins, and the header is emitted with
+  **the capitalization the winning side wrote** (it is not canonicalized).
+- **`params`** merge too, so a client-level default (an API key, a tenant id) survives a request
+  that brings its own parameters. Same-key collisions go to the request; passing `null` or
+  `undefined` drops the parameter entirely, which is how a client default is opted out of.
+- Every other field is **replaced** by the request's value when present.
+
+### Retries and request bodies
+
+Retrying re-sends the same body, so the body has to survive being read twice. Strings, plain
+objects, `URLSearchParams`, `Blob`, `ArrayBuffer`, typed arrays and `FormData` all do. A
+**`ReadableStream` does not**: the first attempt drains it.
+
+Rather than silently sending an empty body on the retry, a request combining `retries > 0` with a
+stream body is rejected up front with a `SmartFetchError` (`type: 'request'`), before any network
+call. Buffer the stream first, or set `retries: 0` for that request.
+
+```ts
+const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });
+await client.post('/x', body, { headers: { 'Content-Type': 'application/json' } });
+// sends exactly one header: Content-Type: application/json
+```
+
+```ts
+const client = new SmartFetch({ params: { api_key: 'SECRET' } });
+await client.get('/users', { params: { page: 1 } });
+// -> /users?api_key=SECRET&page=1
+```
 
 ## Response and errors
 
 Every method resolves with a `SmartFetchResponse<T>`:
 
-| Field        | Type                     | Description                                                      |
-| ------------ | ------------------------ | ---------------------------------------------------------------- |
-| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304). |
-| `status`     | `number`                 | HTTP status code.                                                |
-| `statusText` | `string`                 | Status text.                                                     |
-| `headers`    | `Record<string, string>` | Response headers.                                                |
-| `ok`         | `boolean`                | `true` when the status counted as successful.                    |
-| `url`        | `string`                 | Final request URL.                                               |
-| `config`     | `RequestConfig`          | Effective configuration used.                                    |
-| `raw`        | `Response`               | The untouched native `Response`.                                 |
+| Field        | Type                     | Description                                                         |
+| ------------ | ------------------------ | ------------------------------------------------------------------- |
+| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304).    |
+| `status`     | `number`                 | HTTP status code.                                                   |
+| `statusText` | `string`                 | Status text.                                                        |
+| `headers`    | `Record<string, string>` | Response headers.                                                   |
+| `setCookie`  | `string[]`               | Every `Set-Cookie` header, uncollapsed (empty when there are none). |
+| `ok`         | `boolean`                | `true` when the status counted as successful.                       |
+| `url`        | `string`                 | Final request URL.                                                  |
+| `config`     | `RequestConfig`          | Effective configuration used.                                       |
+| `raw`        | `Response`               | The untouched native `Response`.                                    |
 
 Failures are normalized into a typed error hierarchy. Everything extends `SmartFetchError`, which
 exposes the `type` discriminator plus guards for narrowing:
@@ -322,6 +380,10 @@ try {
 They all additionally carry `config` (the request that failed) and `cause` (the original error, if
 any).
 
+> **Identifying an error:** use `instanceof`, `error.type` or the `isX()` guards. The published
+> bundle is minified, so `error.constructor.name` is mangled — `error.name` is set explicitly and
+> stays correct.
+
 ## Design patterns
 
 - **Adapter** — the client wraps the native `fetch` behind its own injectable interface.
@@ -338,10 +400,9 @@ before adopting it:
 - **No `RequestInit` passthrough for `credentials` / `mode` / `cache` / `redirect` / `keepalive`.**
   In practice this means **cookie-based authentication in the browser is not supported**.
 - **No `HEAD` or `OPTIONS`** — only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`.
-- **Headers only as `Record<string, string>`** — no `Headers` instances and no repeated
-  multi-value headers.
-- **The `Retry-After` header is not honoured** on 429/503; the configured backoff always wins.
-- **`ExponentialBackoff` applies no jitter**, so concurrent clients can retry in lockstep.
+- **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
+  multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
+  in `response.setCookie`.
 - **Tested on Node ≥ 18 only.** The code is runtime-agnostic and should work in browsers and edge
   runtimes, but no browser test suite backs that claim.
 
@@ -358,6 +419,8 @@ npm run typecheck     # tsc --noEmit
 npm run test          # Jest (ESM)
 npm run test:coverage # enforces a 100% threshold
 npm run build         # dist/ (ESM + CJS + types)
+npm run check:pack    # publint + arethetypeswrong
+npm run size          # enforces the bundle budget
 npm run example       # end-to-end smoke test against a real API
 ```
 

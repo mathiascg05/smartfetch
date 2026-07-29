@@ -15,7 +15,7 @@
  */
 
 /** Current library version. */
-export const VERSION = '1.0.0';
+export const VERSION = '2.0.0';
 
 // HTTP client (core of the library).
 export { SmartFetch } from './client.js';
@@ -30,6 +30,11 @@ export { createClient, SmartFetchBuilder } from './factory.js';
  * Lets you make requests without constructing an explicit client. To configure a
  * `baseURL`, headers, timeout or retries, create your own client with
  * {@link createClient} or {@link SmartFetchBuilder}.
+ *
+ * Constructing it is side-effect free even on a runtime without a global `fetch`:
+ * the client resolves its adapter when a request is made, not when it is built.
+ * Importing this library is therefore always safe — the failure only surfaces if
+ * the default client is *used* with no `fetch` available.
  */
 export const smartfetch = createClient();
 
@@ -38,7 +43,7 @@ export default smartfetch;
 
 // Retry backoff strategies (Strategy pattern).
 export { FixedBackoff, ExponentialBackoff } from './retry/backoff.js';
-export type { BackoffStrategy } from './retry/backoff.js';
+export type { BackoffStrategy, ExponentialBackoffOptions } from './retry/backoff.js';
 
 // Request/response interceptors (aspect-oriented hooks).
 export { InterceptorManager } from './interceptors.js';
@@ -59,12 +64,20 @@ export type {
 } from './types.js';
 
 // Typed error model.
-export { SmartFetchError, TimeoutError, NetworkError, HttpError, ParseError } from './errors.js';
+export {
+  SmartFetchError,
+  TimeoutError,
+  CancelledError,
+  NetworkError,
+  HttpError,
+  ParseError,
+} from './errors.js';
 
 export type {
   SmartFetchErrorType,
   SmartFetchErrorOptions,
   TimeoutErrorOptions,
+  CancelledErrorOptions,
   NetworkErrorOptions,
   HttpErrorOptions,
   ParseErrorOptions,

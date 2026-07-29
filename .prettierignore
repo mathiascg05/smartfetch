@@ -3,3 +3,6 @@ coverage/
 node_modules/
 package-lock.json
 CHANGELOG.md
+docs-api/
+reports/
+.stryker-tmp/

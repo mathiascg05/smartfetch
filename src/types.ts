@@ -96,10 +96,24 @@ export interface RequestConfig {
   body?: unknown;
 
   /**
-   * Maximum time to wait, in milliseconds, before aborting the request.
+   * Maximum time to wait, in milliseconds, before aborting a **single attempt**.
    * `0` or `undefined` means no deadline.
+   *
+   * With retries configured this does not bound the total time: five attempts of
+   * 5 s each can take 25 s plus the backoff waits. Use
+   * {@link RequestConfig.totalTimeout} for that.
    */
   timeout?: number;
+
+  /**
+   * Maximum time, in milliseconds, for the **whole operation** — every attempt
+   * plus the backoff waits between them. `0` or `undefined` means no global
+   * deadline.
+   *
+   * Composes with {@link RequestConfig.timeout}: whichever expires first aborts
+   * the request, and a global expiry raises a `TimeoutError` carrying this value.
+   */
+  totalTimeout?: number;
 
   /**
    * Number of additional retries after a server (5xx) or network error.
@@ -116,10 +130,19 @@ export interface RequestConfig {
 
   /**
    * Predicate deciding whether a failed request should be retried. When omitted,
-   * the default policy retries network errors and HTTP 5xx responses, but never
-   * timeouts or client (4xx) errors.
+   * the default policy retries network errors, HTTP 5xx responses and 429, but
+   * never timeouts, cancellations or other client (4xx) errors.
    */
   retryOn?: RetryPredicate;
+
+  /**
+   * Upper bound, in milliseconds, applied to a delay the server asks for through
+   * the `Retry-After` header on a 429 or 503. Defaults to 60 000 (one minute).
+   *
+   * `Retry-After` takes precedence over {@link RequestConfig.backoff}; this cap
+   * keeps a server that asks for an hour from hanging the request that long.
+   */
+  maxRetryAfterMs?: number;
 
   /** Format the response body should be read as. Defaults to `json`. */
   responseType?: ResponseType;
@@ -158,8 +181,24 @@ export interface SmartFetchResponse<T = unknown> {
   /** Human-readable text of the HTTP status (for example, `"OK"`). */
   statusText: string;
 
-  /** Response headers as key/value pairs. */
+  /**
+   * Response headers as key/value pairs.
+   *
+   * A flat record cannot represent a header sent more than once, so any repeated
+   * header collapses to its last value here. In practice `Set-Cookie` is the only
+   * header that matters for this, and it is exposed intact in
+   * {@link SmartFetchResponse.setCookie}.
+   */
   headers: Record<string, string>;
+
+  /**
+   * Every `Set-Cookie` header, in order, with none collapsed.
+   *
+   * Empty when the response carried no cookies. This exists because
+   * {@link SmartFetchResponse.headers} is a flat record and would silently drop
+   * all but the last cookie.
+   */
+  setCookie: string[];
 
   /** `true` when the status code falls in the 2xx range. */
   ok: boolean;

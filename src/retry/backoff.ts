@@ -58,13 +58,35 @@ export class FixedBackoff implements BackoffStrategy {
 }
 
 /**
+ * Options for {@link ExponentialBackoff}.
+ */
+export interface ExponentialBackoffOptions {
+  /**
+   * Whether to randomize the delay so concurrent clients do not retry in
+   * lockstep. Enabled by default.
+   */
+  jitter?: boolean;
+}
+
+/**
  * Exponential backoff: the delay doubles on each retry (`base`, `base·2`,
- * `base·4`, ...), optionally capped by a maximum. This is the usual policy for
+ * `base·4`, ...), capped by an optional maximum. This is the usual policy for
  * backing off from an overloaded server.
  *
+ * **Jitter is applied by default.** Without it, every client that failed at the
+ * same moment retries at the same moment, and the load spike that knocked the
+ * server over repeats on each round. The strategy used is *equal jitter*: the
+ * delay lands anywhere in `[exponential / 2, exponential]`. Compared with *full
+ * jitter* (`[0, exponential]`) it keeps a floor, so a struggling server never
+ * gets an almost-immediate retry.
+ *
+ * Pass `{ jitter: false }` when a deterministic delay is needed — in tests, for
+ * instance.
+ *
  * @example
- * new ExponentialBackoff(100);          // 100, 200, 400, 800 ms...
- * new ExponentialBackoff(100, 1000);    // 100, 200, 400, 800, 1000, 1000 ms...
+ * new ExponentialBackoff(100);                            // ~50-100, ~100-200, ~200-400 ms...
+ * new ExponentialBackoff(100, 1000);                      // same, never above 1000 ms
+ * new ExponentialBackoff(100, Infinity, { jitter: false }); // exactly 100, 200, 400, 800 ms...
  */
 export class ExponentialBackoff implements BackoffStrategy {
   /** Base delay (for the first retry), in milliseconds. */
@@ -73,23 +95,36 @@ export class ExponentialBackoff implements BackoffStrategy {
   /** Upper bound on the delay, in milliseconds. */
   private readonly maxMs: number;
 
+  /** Whether the computed delay is randomized. */
+  private readonly jitter: boolean;
+
   /**
    * @param baseMs - Delay of the first retry, in milliseconds. Defaults to `100`.
    * @param maxMs - Maximum delay, in milliseconds, never exceeded. Defaults to `Infinity`.
+   * @param options - Extra options; `jitter` defaults to `true`.
    */
-  constructor(baseMs = 100, maxMs = Infinity) {
+  constructor(baseMs = 100, maxMs = Infinity, options: ExponentialBackoffOptions = {}) {
     this.baseMs = Math.max(0, baseMs);
     this.maxMs = maxMs;
+    this.jitter = options.jitter ?? true;
   }
 
   /**
-   * Computes the exponential delay for the given retry, capped by the maximum.
+   * Computes the delay for the given retry, capped by the maximum.
    *
    * @param attempt - Retry number (1-based).
-   * @returns `min(baseMs · 2^(attempt-1), maxMs)` in milliseconds.
+   * @returns With jitter, a value in `[capped / 2, capped]`; without it, exactly
+   *   `min(baseMs · 2^(attempt-1), maxMs)`, in milliseconds.
    */
   delay(attempt: number): number {
     const exponential = this.baseMs * 2 ** (attempt - 1);
-    return Math.min(exponential, this.maxMs);
+    const capped = Math.min(exponential, this.maxMs);
+
+    if (!this.jitter) {
+      return capped;
+    }
+    // Equal jitter: half the delay is fixed, half is random.
+    const half = capped / 2;
+    return half + Math.random() * half;
   }
 }

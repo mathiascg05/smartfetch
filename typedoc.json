@@ -1,0 +1,33 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs-api",
+  "name": "SmartFetch",
+  "readme": "README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/mathiascg05/smartfetch",
+    "npm": "https://www.npmjs.com/package/@mathiascg05/smartfetch"
+  },
+  "externalSymbolLinkMappings": {
+    "typescript": {
+      "Response": "https://developer.mozilla.org/docs/Web/API/Response",
+      "Request": "https://developer.mozilla.org/docs/Web/API/Request",
+      "Headers": "https://developer.mozilla.org/docs/Web/API/Headers",
+      "FormData": "https://developer.mozilla.org/docs/Web/API/FormData",
+      "Blob": "https://developer.mozilla.org/docs/Web/API/Blob",
+      "ArrayBuffer": "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer",
+      "URLSearchParams": "https://developer.mozilla.org/docs/Web/API/URLSearchParams",
+      "AbortSignal": "https://developer.mozilla.org/docs/Web/API/AbortSignal"
+    }
+  },
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": true
+  },
+  "treatWarningsAsErrors": false
+}

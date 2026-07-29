@@ -21,10 +21,13 @@ import type { RequestConfig } from './types.js';
  * `AbortSignal`-based API use the name `"AbortError"`; this check is agnostic to
  * the concrete type and only looks at that name.
  *
+ * Exported for {@link module:client}, which needs the same criterion to tell a
+ * caller-driven cancellation apart from a genuine transport failure.
+ *
  * @param error - Captured value to classify.
  * @returns `true` when the error represents an abort.
  */
-function isAbortError(error: unknown): boolean {
+export function isAbortError(error: unknown): boolean {
   // `instanceof Error` is deliberately avoided: in Node, `fetch` rejects with a
   // `DOMException`, which does not inherit from `Error`. The name is enough.
   return (
