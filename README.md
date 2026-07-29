@@ -265,7 +265,7 @@ and/or per request; request values are merged over the client ones.
 | `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below). |
 | `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                   |
 | `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                                                       |
-| `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt).                                                      |
+| `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt). Not compatible with a stream body — see below.       |
 | `backoff`        | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                                                       |
 | `retryOn`        | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.                                           |
 | `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                            |
@@ -286,6 +286,16 @@ Client defaults and per-request configuration are combined per field:
   that brings its own parameters. Same-key collisions go to the request; passing `null` or
   `undefined` drops the parameter entirely, which is how a client default is opted out of.
 - Every other field is **replaced** by the request's value when present.
+
+### Retries and request bodies
+
+Retrying re-sends the same body, so the body has to survive being read twice. Strings, plain
+objects, `URLSearchParams`, `Blob`, `ArrayBuffer`, typed arrays and `FormData` all do. A
+**`ReadableStream` does not**: the first attempt drains it.
+
+Rather than silently sending an empty body on the retry, a request combining `retries > 0` with a
+stream body is rejected up front with a `SmartFetchError` (`type: 'request'`), before any network
+call. Buffer the stream first, or set `retries: 0` for that request.
 
 ```ts
 const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });

@@ -48,6 +48,29 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+/**
+ * Whether a request body can be sent more than once.
+ *
+ * Retrying re-sends the same `RequestInit`, so the body must survive being read
+ * again. Strings, plain objects (serialized to JSON), `URLSearchParams`, `Blob`,
+ * `ArrayBuffer`, typed arrays and `FormData` all can: `fetch` re-reads them from
+ * memory. A `ReadableStream` cannot — the first attempt drains it — and neither
+ * can an async iterable.
+ *
+ * Rebuilding the `RequestInit` per attempt would not help: it reads `config.body`
+ * again and hands over the very same, already-drained stream object.
+ */
+function isReplayableBody(body: unknown): boolean {
+  if (body === undefined || body === null) {
+    return true;
+  }
+  if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {
+    return false;
+  }
+  // Async iterables (including Node streams) are single-pass too.
+  return !(typeof body === 'object' && Symbol.asyncIterator in (body as Record<symbol, unknown>));
+}
+
 /** Looks up a header by name, case-insensitively. */
 function hasHeader(headers: HeadersInit, name: string): boolean {
   const target = name.toLowerCase();
@@ -276,6 +299,23 @@ export class SmartFetch {
    * @param effective - Effective configuration (already merged and intercepted).
    */
   private dispatch<T>(effective: RequestConfig): Promise<SmartFetchResponse<T>> {
+    const retries = effective.retries ?? 0;
+
+    // A single-pass body cannot survive a second attempt, and the failure would
+    // otherwise show up as an opaque runtime error on the retry — or worse, as a
+    // silently empty body. Refusing up front, before touching the network, is the
+    // only honest option.
+    if (retries > 0 && !isReplayableBody(effective.body)) {
+      return Promise.reject(
+        new SmartFetchError(
+          'A stream body cannot be retried: the first attempt consumes it. ' +
+            'Set retries to 0 for this request, or buffer the stream into a string, ' +
+            'Blob or ArrayBuffer first.',
+          { type: 'request', config: effective },
+        ),
+      );
+    }
+
     // URL and native options are built once and reused across attempts (the retry
     // engine re-runs performAttempt, not this).
     const url = buildURL(effective);
@@ -285,7 +325,7 @@ export class SmartFetch {
     return withRetry(
       (): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(adapter, url, init, effective),
       {
-        retries: effective.retries ?? 0,
+        retries,
         backoff: effective.backoff,
         shouldRetry: effective.retryOn ?? defaultShouldRetry,
         signal: effective.signal,
