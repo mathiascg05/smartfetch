@@ -24,7 +24,6 @@ jobs:
       # Necesario para que npm pueda firmar la atestación de procedencia vía OIDC.
       id-token: write
 
-
     steps:
       - uses: actions/checkout@v5
 
