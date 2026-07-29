@@ -95,6 +95,29 @@ function mergeHeaders(base: HeadersInit = {}, override: HeadersInit = {}): Heade
 }
 
 /**
+ * Checks that what came out of the request interceptor chain is still a usable
+ * configuration.
+ *
+ * Forgetting the `return` in a request interceptor is the easiest mistake to make,
+ * and without this guard it surfaced as a bare `TypeError` from the internals
+ * ("Cannot read properties of undefined") — outside the library's error model and
+ * with no hint of what to fix.
+ *
+ * @param value - Value produced by the last request interceptor.
+ * @throws {SmartFetchError} With `type: 'request'` when the contract was broken.
+ */
+function assertRequestConfig(value: unknown): RequestConfig {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new SmartFetchError(
+      'A request interceptor must return the config object it received ' +
+        `(got ${value === null ? 'null' : typeof value}). Did you forget the return statement?`,
+      { type: 'request' },
+    );
+  }
+  return value;
+}
+
+/**
  * High-level HTTP client built on top of the native `fetch`.
  *
  * @example
@@ -192,9 +215,12 @@ export class SmartFetch {
       chain.unshift([interceptor.fulfilled, interceptor.rejected]);
     });
 
-    // Request core: receives the intercepted config and returns the response.
+    // Request core: receives the intercepted config and returns the response. The
+    // config is validated here, at the boundary between caller-supplied
+    // interceptors and the internals, so a broken interceptor fails inside the
+    // library's error model instead of as a TypeError deeper down.
     chain.push([
-      (cfg: RequestConfig): Promise<SmartFetchResponse<T>> => this.dispatch<T>(cfg),
+      (cfg: unknown): Promise<SmartFetchResponse<T>> => this.dispatch<T>(assertRequestConfig(cfg)),
       undefined,
     ]);
 
