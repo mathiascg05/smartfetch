@@ -13,7 +13,7 @@
  * @module client
  */
 
-import { HttpError, NetworkError, ParseError, SmartFetchError } from './errors.js';
+import { CancelledError, HttpError, NetworkError, ParseError, SmartFetchError } from './errors.js';
 import type {
   FetchAdapter,
   HeadersInit,
@@ -22,7 +22,7 @@ import type {
   SmartFetchOptions,
   SmartFetchResponse,
 } from './types.js';
-import { withTimeout } from './timeout.js';
+import { isAbortError, withTimeout } from './timeout.js';
 import { defaultShouldRetry, withRetry } from './retry/retry.js';
 import { InterceptorManager } from './interceptors.js';
 import { buildURL } from './url.js';
@@ -224,8 +224,14 @@ export class SmartFetch {
         effective,
       );
     } catch (error) {
+      // A deadline that expired already arrived here as a TimeoutError.
       if (error instanceof SmartFetchError) {
         throw error;
+      }
+      // Any remaining abort is caller-driven: the external signal fired. It is a
+      // cancellation, not a transport failure, so it must not be retried.
+      if (isAbortError(error)) {
+        throw new CancelledError(undefined, { config: effective, cause: error });
       }
       throw new NetworkError('Network error while performing the request', {
         config: effective,

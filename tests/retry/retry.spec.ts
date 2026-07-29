@@ -1,7 +1,13 @@
 import { jest } from '@jest/globals';
 import { defaultShouldRetry, withRetry } from '../../src/retry/retry.js';
 import { FixedBackoff } from '../../src/retry/backoff.js';
-import { HttpError, NetworkError, ParseError, TimeoutError } from '../../src/errors.js';
+import {
+  CancelledError,
+  HttpError,
+  NetworkError,
+  ParseError,
+  TimeoutError,
+} from '../../src/errors.js';
 
 /**
  * Pruebas unitarias del motor de reintentos {@link withRetry} y de la política
@@ -106,9 +112,14 @@ describe('withRetry', () => {
       shouldRetry: always,
       signal: controller.signal,
     });
-    controller.abort(new Error('cancelado por el usuario'));
+    const motivo = new Error('cancelado por el usuario');
+    controller.abort(motivo);
 
-    await expect(promesa).rejects.toThrow('cancelado por el usuario');
+    // El motivo del aborto se conserva como `cause`, pero el error que sale de la
+    // librería es siempre un CancelledError: cancelar no es un fallo transitorio.
+    const error = await promesa.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CancelledError);
+    expect((error as CancelledError).cause).toBe(motivo);
     // Solo el intento original: la espera se cortó antes del reintento.
     expect(operation).toHaveBeenCalledTimes(1);
   });
@@ -164,11 +175,13 @@ describe('withRetry: cancelación durante la espera del backoff', () => {
     const motivo = new Error('cancelado por quien llama');
     controller.abort(motivo);
 
-    await expect(promesa).rejects.toBe(motivo);
+    const error = await promesa.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CancelledError);
+    expect((error as CancelledError).cause).toBe(motivo);
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
-  it('no llega a esperar si la señal ya venía abortada', async () => {
+  it('una señal ya abortada no consume ningún intento', async () => {
     const motivo = new Error('abortado de antemano');
     const operation = jest.fn(async () => {
       throw new NetworkError('caída de red');
@@ -181,7 +194,10 @@ describe('withRetry: cancelación durante la espera del backoff', () => {
       signal: AbortSignal.abort(motivo),
     });
 
-    await expect(promesa).rejects.toBe(motivo);
-    expect(operation).toHaveBeenCalledTimes(1);
+    const error = await promesa.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CancelledError);
+    expect((error as CancelledError).cause).toBe(motivo);
+    // El chequeo al inicio del bucle corta antes de ejecutar la operación.
+    expect(operation).not.toHaveBeenCalled();
   });
 });

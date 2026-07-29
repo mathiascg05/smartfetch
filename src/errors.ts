@@ -16,6 +16,7 @@ import type { RequestConfig, ResponseType, SmartFetchResponse } from './types.js
  * Category a {@link SmartFetchError} belongs to.
  *
  * - `timeout`: the request exceeded its deadline.
+ * - `cancelled`: the caller aborted the request through an external `AbortSignal`.
  * - `network`: a transport failure (unreachable server, offline, DNS, ...).
  * - `http`: the server responded with an unsuccessful status code.
  * - `parse`: the body of a successful response could not be read in the requested
@@ -23,7 +24,8 @@ import type { RequestConfig, ResponseType, SmartFetchResponse } from './types.js
  * - `request`: the request could not be built or configured.
  * - `unknown`: unclassified cause.
  */
-export type SmartFetchErrorType = 'timeout' | 'network' | 'http' | 'parse' | 'request' | 'unknown';
+export type SmartFetchErrorType =
+  'timeout' | 'cancelled' | 'network' | 'http' | 'parse' | 'request' | 'unknown';
 
 /**
  * Options shared by every {@link SmartFetchError}.
@@ -92,6 +94,11 @@ export class SmartFetchError extends Error {
     return this.type === 'timeout';
   }
 
+  /** Whether the request was cancelled by the caller. */
+  isCancelled(): this is CancelledError {
+    return this.type === 'cancelled';
+  }
+
   /** Whether the request failed because of a network problem. */
   isNetwork(): this is NetworkError {
     return this.type === 'network';
@@ -138,6 +145,43 @@ export class TimeoutError extends SmartFetchError {
     });
     this.name = 'TimeoutError';
     this.timeout = timeout;
+  }
+}
+
+/**
+ * Options for building a {@link CancelledError}.
+ */
+export interface CancelledErrorOptions {
+  /** Configuration of the request that was cancelled. */
+  config?: RequestConfig;
+  /** Original cause — typically the `AbortError`, or the signal's `reason`. */
+  cause?: unknown;
+}
+
+/**
+ * Thrown when the caller aborts a request through the `AbortSignal` passed as
+ * {@link RequestConfig.signal}.
+ *
+ * Cancellation is deliberate, not a transient failure, so it is never retried and
+ * is kept distinct from {@link NetworkError}: a cancelled request never reached a
+ * transport failure, it was called off. It is also distinct from
+ * {@link TimeoutError}, which represents a deadline the library itself enforced.
+ */
+export class CancelledError extends SmartFetchError {
+  /**
+   * @param message - Human-readable description of the cancellation.
+   * @param options - Optional error metadata.
+   */
+  constructor(
+    message = 'The request was cancelled by the caller',
+    options: CancelledErrorOptions = {},
+  ) {
+    super(message, {
+      type: 'cancelled',
+      config: options.config,
+      cause: options.cause,
+    });
+    this.name = 'CancelledError';
   }
 }
 

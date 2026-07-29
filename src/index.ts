@@ -59,12 +59,20 @@ export type {
 } from './types.js';
 
 // Typed error model.
-export { SmartFetchError, TimeoutError, NetworkError, HttpError, ParseError } from './errors.js';
+export {
+  SmartFetchError,
+  TimeoutError,
+  CancelledError,
+  NetworkError,
+  HttpError,
+  ParseError,
+} from './errors.js';
 
 export type {
   SmartFetchErrorType,
   SmartFetchErrorOptions,
   TimeoutErrorOptions,
+  CancelledErrorOptions,
   NetworkErrorOptions,
   HttpErrorOptions,
   ParseErrorOptions,
