@@ -3,6 +3,7 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
+[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.6%20kB%20gzip-brightgreen.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -417,6 +418,8 @@ npm run typecheck     # tsc --noEmit
 npm run test          # Jest (ESM)
 npm run test:coverage # exige el umbral del 100%
 npm run build         # dist/ (ESM + CJS + tipos)
+npm run check:pack    # publint + arethetypeswrong
+npm run size          # impone el presupuesto de tamaño
 npm run example       # prueba de humo end-to-end contra una API real
 ```
 

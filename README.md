@@ -3,6 +3,7 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
+[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.6%20kB%20gzip-brightgreen.svg)](#testing)
 [![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
 [![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -417,6 +418,8 @@ npm run typecheck     # tsc --noEmit
 npm run test          # Jest (ESM)
 npm run test:coverage # enforces a 100% threshold
 npm run build         # dist/ (ESM + CJS + types)
+npm run check:pack    # publint + arethetypeswrong
+npm run size          # enforces the bundle budget
 npm run example       # end-to-end smoke test against a real API
 ```
 
