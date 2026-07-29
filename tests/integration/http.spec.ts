@@ -1,5 +1,12 @@
 import { SmartFetch } from '../../src/client.js';
-import { CancelledError, HttpError, ParseError, TimeoutError } from '../../src/errors.js';
+import {
+  CancelledError,
+  HttpError,
+  NetworkError,
+  ParseError,
+  SmartFetchError,
+  TimeoutError,
+} from '../../src/errors.js';
 import { FixedBackoff } from '../../src/retry/backoff.js';
 import { startServer, type TestServer } from './server.js';
 
@@ -251,6 +258,30 @@ describe('integración: SmartFetch contra un servidor real', () => {
   });
 
   describe('respuestas rotas', () => {
+    it('un corte de conexión a mitad de cuerpo produce NetworkError, no un error crudo', async () => {
+      const client = new SmartFetch({ baseURL: server.base });
+
+      const error = await client.get('/truncated').catch((e: unknown) => e);
+
+      // El cuerpo se lee DESPUÉS del try/catch que envuelve la llamada, así que
+      // un socket cortado a mitad escapaba del modelo de errores como un
+      // `TypeError: terminated` crudo.
+      expect(error).toBeInstanceOf(SmartFetchError);
+      expect(error).toBeInstanceOf(NetworkError);
+      expect((error as NetworkError).type).toBe('network');
+      // La causa original se conserva para poder diagnosticar.
+      expect((error as NetworkError).cause).toBeDefined();
+    });
+
+    it('un corte de conexión es transitorio y se reintenta', async () => {
+      const client = new SmartFetch({ baseURL: server.base, retries: 1 });
+
+      await client.get('/truncated').catch(() => undefined);
+
+      // Al ser NetworkError entra en la política por defecto: 1 intento + 1 reintento.
+      expect(server.state.hits['/truncated']).toBe(2);
+    });
+
     it('un 200 con JSON malformado produce ParseError con el texto crudo', async () => {
       const client = new SmartFetch({ baseURL: server.base });
 

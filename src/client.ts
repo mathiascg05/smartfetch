@@ -463,7 +463,27 @@ export class SmartFetch {
       });
     }
 
-    const response = await this.buildResponse<T>(raw, url, effective);
+    // Reading the body is a second trip over the network and can fail on its own:
+    // a socket cut mid-response rejects here, not above. Without this guard that
+    // failure escaped as a bare `TypeError: terminated`, outside the error model
+    // and invisible to the retry policy — even though a truncated response is
+    // exactly the kind of transient fault worth retrying.
+    let response: SmartFetchResponse<T>;
+    try {
+      response = await this.buildResponse<T>(raw, url, effective);
+    } catch (error) {
+      // A ParseError raised by parseBody is already part of the model.
+      if (error instanceof SmartFetchError) {
+        throw error;
+      }
+      if (isAbortError(error)) {
+        throw new CancelledError(undefined, { config: effective, cause: error });
+      }
+      throw new NetworkError('The connection closed before the response body was fully read', {
+        config: effective,
+        cause: error,
+      });
+    }
 
     if (!this.isStatusAccepted(response.status, effective)) {
       throw new HttpError(response.status, response.statusText, {

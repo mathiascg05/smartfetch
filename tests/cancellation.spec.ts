@@ -119,6 +119,26 @@ describe('cancelación con AbortSignal externa', () => {
     expect((error as CancelledError).cause).toBe(motivo);
   });
 
+  it('abortar mientras se lee el cuerpo también produce CancelledError', async () => {
+    // Las cabeceras llegan bien; el aborto ocurre al consumir el cuerpo, que es
+    // un segundo viaje por la red y falla por su cuenta.
+    const respuesta = {
+      status: 200,
+      statusText: 'OK',
+      ok: true,
+      url: '',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: () => Promise.reject(abortError()),
+    } as unknown as Response;
+
+    const client = new SmartFetch({ retries: 2 }, { fetch: async () => respuesta });
+
+    const error = await client.get('https://api.x.com/x').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(CancelledError);
+    expect((error as CancelledError).type).toBe('cancelled');
+  });
+
   it('defaultShouldRetry nunca reintenta una cancelación', () => {
     expect(defaultShouldRetry(new CancelledError())).toBe(false);
   });
