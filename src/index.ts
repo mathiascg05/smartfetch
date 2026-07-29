@@ -30,6 +30,11 @@ export { createClient, SmartFetchBuilder } from './factory.js';
  * Lets you make requests without constructing an explicit client. To configure a
  * `baseURL`, headers, timeout or retries, create your own client with
  * {@link createClient} or {@link SmartFetchBuilder}.
+ *
+ * Constructing it is side-effect free even on a runtime without a global `fetch`:
+ * the client resolves its adapter when a request is made, not when it is built.
+ * Importing this library is therefore always safe — the failure only surfaces if
+ * the default client is *used* with no `fetch` available.
  */
 export const smartfetch = createClient();
 

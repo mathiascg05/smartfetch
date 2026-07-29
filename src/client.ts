@@ -105,8 +105,11 @@ export class SmartFetch {
   /** Default configuration applied to every request. */
   private readonly defaults: RequestConfig;
 
-  /** Low-level adapter performing the actual request (Adapter pattern). */
-  private readonly adapter: FetchAdapter;
+  /**
+   * Adapter injected by the caller, if any (Adapter pattern). When absent, the
+   * global `fetch` is resolved per request by {@link SmartFetch.resolveAdapter}.
+   */
+  private readonly injectedFetch?: FetchAdapter;
 
   /**
    * Request and response interceptors (aspect-oriented hooks).
@@ -133,16 +136,34 @@ export class SmartFetch {
    */
   constructor(defaults: RequestConfig = {}, options: SmartFetchOptions = {}) {
     this.defaults = defaults;
+    this.injectedFetch = options.fetch;
+  }
 
-    const adapter: FetchAdapter | undefined = options.fetch ?? globalThis.fetch;
-    if (typeof adapter !== 'function') {
+  /**
+   * Resolves the adapter to use for a request.
+   *
+   * The global `fetch` is looked up **per request**, not in the constructor, so
+   * that merely constructing a client — including the default {@link smartfetch}
+   * singleton built when this library is imported — never throws on a runtime
+   * without a global `fetch`. That runtime is precisely where a caller would want
+   * to inject their own adapter, and an eager check never gave them the chance.
+   * A late-loaded polyfill is picked up for the same reason.
+   *
+   * @throws {SmartFetchError} With `type: 'request'` when no `fetch` is available.
+   */
+  private resolveAdapter(): FetchAdapter {
+    if (this.injectedFetch) {
+      return this.injectedFetch;
+    }
+    const globalFetch = globalThis.fetch as FetchAdapter | undefined;
+    if (typeof globalFetch !== 'function') {
       throw new SmartFetchError(
         'No fetch implementation available. Use Node 18+ or inject one via options.fetch.',
         { type: 'request' },
       );
     }
     // Bind the global fetch to globalThis to avoid "Illegal invocation".
-    this.adapter = options.fetch ? options.fetch : adapter.bind(globalThis);
+    return globalFetch.bind(globalThis);
   }
 
   /**
@@ -233,9 +254,10 @@ export class SmartFetch {
     // engine re-runs performAttempt, not this).
     const url = buildURL(effective);
     const init = this.buildRequestInit(effective);
+    const adapter = this.resolveAdapter();
 
     return withRetry(
-      (): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(url, init, effective),
+      (): Promise<SmartFetchResponse<T>> => this.performAttempt<T>(adapter, url, init, effective),
       {
         retries: effective.retries ?? 0,
         backoff: effective.backoff,
@@ -257,6 +279,7 @@ export class SmartFetch {
    * @throws {ParseError} If the body of an accepted response cannot be parsed.
    */
   private async performAttempt<T>(
+    adapter: FetchAdapter,
     url: string,
     init: RequestInit,
     effective: RequestConfig,
@@ -269,7 +292,7 @@ export class SmartFetch {
       raw = await withTimeout(
         effective.timeout,
         effective.signal,
-        (signal) => this.adapter(url, signal ? { ...init, signal } : init),
+        (signal) => adapter(url, signal ? { ...init, signal } : init),
         effective,
       );
     } catch (error) {

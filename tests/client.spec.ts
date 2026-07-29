@@ -1,6 +1,12 @@
 import { jest } from '@jest/globals';
 import { SmartFetch } from '../src/client.js';
-import { HttpError, NetworkError, ParseError, TimeoutError } from '../src/errors.js';
+import {
+  HttpError,
+  NetworkError,
+  ParseError,
+  SmartFetchError,
+  TimeoutError,
+} from '../src/errors.js';
 import type { FetchAdapter } from '../src/types.js';
 
 /**
@@ -602,12 +608,50 @@ describe('SmartFetch (núcleo + GET)', () => {
   });
 
   describe('configuración del cliente', () => {
-    it('lanza SmartFetchError si no hay fetch disponible ni inyectado', () => {
+    it('construir un cliente sin fetch disponible no lanza', () => {
       const original = globalThis.fetch;
       // @ts-expect-error: se elimina temporalmente para simular un entorno sin fetch.
       delete globalThis.fetch;
       try {
-        expect(() => new SmartFetch()).toThrow(/fetch/i);
+        // El adaptador se resuelve al hacer la petición, no al construir: así la
+        // librería puede importarse en runtimes sin `fetch` global.
+        expect(() => new SmartFetch()).not.toThrow();
+      } finally {
+        globalThis.fetch = original;
+      }
+    });
+
+    it('lanza SmartFetchError al pedir si no hay fetch disponible ni inyectado', async () => {
+      const original = globalThis.fetch;
+      // @ts-expect-error: se elimina temporalmente para simular un entorno sin fetch.
+      delete globalThis.fetch;
+      try {
+        const client = new SmartFetch();
+        const error = await client.get('https://api.x.com/x').catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(SmartFetchError);
+        expect((error as SmartFetchError).type).toBe('request');
+        expect((error as SmartFetchError).message).toMatch(/fetch/i);
+      } finally {
+        globalThis.fetch = original;
+      }
+    });
+
+    it('recoge un fetch global cargado después de construir el cliente', async () => {
+      const original = globalThis.fetch;
+      // @ts-expect-error: se elimina temporalmente para simular un entorno sin fetch.
+      delete globalThis.fetch;
+      try {
+        const client = new SmartFetch();
+        // El polyfill llega tarde, cuando el cliente ya existe.
+        globalThis.fetch = async () =>
+          new Response('{"tarde":true}', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+
+        const res = await client.get<{ tarde: boolean }>('https://api.x.com/x');
+        expect(res.data).toEqual({ tarde: true });
       } finally {
         globalThis.fetch = original;
       }
