@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a capability SmartFetch does not have yet
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SmartFetch is deliberately small. Several known gaps are listed under
+        [Limitations and non-goals](https://github.com/mathiascg05/smartfetch#limitations-and-non-goals) —
+        if your request is one of them, that is fine: say so and describe your use case,
+        which is what decides whether it gets built.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case, not the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      description: How would it look from the caller's side?
+      render: ts
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: >
+        Can this already be done with an interceptor, a custom `retryOn`, or an injected
+        `fetch` adapter? If you tried and it did not work, describe what got in the way.

@@ -1,51 +1,50 @@
 /**
- * SmartFetch — wrapper avanzado y resiliente sobre la API nativa `fetch`.
+ * SmartFetch — a resilient wrapper around the native `fetch` API.
  *
- * Punto de entrada público de la librería. Re-exporta toda la superficie
- * pública:
+ * Public entry point of the library. Re-exports the whole public surface:
  *
- * - El cliente {@link SmartFetch} y sus fábricas ({@link createClient},
- *   {@link SmartFetchBuilder}) más la instancia por defecto {@link smartfetch}
- *   (Singleton, también export por defecto).
- * - Las estrategias de backoff para reintentos ({@link FixedBackoff},
- *   {@link ExponentialBackoff}) y el {@link InterceptorManager} (AOP).
- * - Los contratos de configuración/respuesta y el modelo de errores controlados
- *   ({@link SmartFetchError} y sus subtipos).
+ * - The {@link SmartFetch} client and its factories ({@link createClient},
+ *   {@link SmartFetchBuilder}) plus the default {@link smartfetch} instance
+ *   (Singleton, also the default export).
+ * - The retry backoff strategies ({@link FixedBackoff}, {@link ExponentialBackoff})
+ *   and the {@link InterceptorManager} (aspect-oriented hooks).
+ * - The configuration/response contracts and the typed error model
+ *   ({@link SmartFetchError} and its subtypes).
  *
  * @packageDocumentation
  */
 
-/** Versión actual de la librería. */
+/** Current library version. */
 export const VERSION = '1.0.0';
 
-// Cliente HTTP (núcleo de la librería).
+// HTTP client (core of the library).
 export { SmartFetch } from './client.js';
 
-// Creación de clientes: Factory (createClient) + Builder (SmartFetchBuilder).
+// Client creation: Factory (createClient) + Builder (SmartFetchBuilder).
 import { createClient } from './factory.js';
 export { createClient, SmartFetchBuilder } from './factory.js';
 
 /**
- * Instancia por defecto lista para usar (patrón Singleton).
+ * Ready-to-use default instance (Singleton pattern).
  *
- * Permite hacer peticiones sin construir un cliente explícito. Para configurar
- * `baseURL`, cabeceras, timeout o reintentos, crea un cliente propio con
- * {@link createClient} o {@link SmartFetchBuilder}.
+ * Lets you make requests without constructing an explicit client. To configure a
+ * `baseURL`, headers, timeout or retries, create your own client with
+ * {@link createClient} or {@link SmartFetchBuilder}.
  */
 export const smartfetch = createClient();
 
-// Export por defecto: `import sf from 'smartfetch'` usa el Singleton anterior.
+// Default export: `import sf from '@mathiascg05/smartfetch'` yields the Singleton above.
 export default smartfetch;
 
-// Estrategias de backoff para reintentos (patrón Strategy).
+// Retry backoff strategies (Strategy pattern).
 export { FixedBackoff, ExponentialBackoff } from './retry/backoff.js';
 export type { BackoffStrategy } from './retry/backoff.js';
 
-// Interceptores de petición/respuesta (Programación Orientada a Aspectos).
+// Request/response interceptors (aspect-oriented hooks).
 export { InterceptorManager } from './interceptors.js';
 export type { Interceptor, InterceptorFulfilled, InterceptorRejected } from './interceptors.js';
 
-// Contratos públicos (tipos e interfaces de configuración y respuesta).
+// Public contracts (configuration and response types and interfaces).
 export type {
   HttpMethod,
   ResponseType,
@@ -59,14 +58,8 @@ export type {
   SmartFetchOptions,
 } from './types.js';
 
-// Modelo de errores controlados.
-export {
-  SmartFetchError,
-  TimeoutError,
-  NetworkError,
-  HttpError,
-  ParseError,
-} from './errors.js';
+// Typed error model.
+export { SmartFetchError, TimeoutError, NetworkError, HttpError, ParseError } from './errors.js';
 
 export type {
   SmartFetchErrorType,

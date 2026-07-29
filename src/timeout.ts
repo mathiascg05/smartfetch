@@ -1,12 +1,12 @@
 /**
- * Control de tiempo de espera (timeout) de SmartFetch.
+ * SmartFetch timeout control.
  *
- * Expone {@link withTimeout}, una utilidad que envuelve una operación de red y le
- * impone un plazo máximo mediante `AbortController`: si el tiempo se agota, la
- * operación se cancela y el fallo se traduce a un {@link TimeoutError} controlado.
- * La utilidad también combina el timeout con una posible señal de aborto externa
- * provista por quien consume la librería, de modo que ambas vías de cancelación
- * conviven sin pisarse. Es un módulo interno: no forma parte de la API pública.
+ * Exposes {@link withTimeout}, a utility that wraps a network operation and gives
+ * it a deadline via `AbortController`: when the time runs out the operation is
+ * cancelled and the failure is translated into a typed {@link TimeoutError}. It
+ * also combines that deadline with a caller-provided abort signal, so both
+ * cancellation paths coexist without stepping on each other. This is an internal
+ * module: it is not part of the public API.
  *
  * @module timeout
  */
@@ -15,44 +15,42 @@ import { TimeoutError } from './errors.js';
 import type { RequestConfig } from './types.js';
 
 /**
- * Indica si un error corresponde a una cancelación por `AbortController`.
+ * Whether an error represents an `AbortController` cancellation.
  *
- * Al abortar, tanto `fetch` (que rechaza con un `DOMException`) como el resto de
- * APIs basadas en `AbortSignal` usan el nombre `"AbortError"`; esta comprobación
- * es agnóstica al tipo concreto y solo mira dicho nombre.
+ * On abort, both `fetch` (which rejects with a `DOMException`) and every other
+ * `AbortSignal`-based API use the name `"AbortError"`; this check is agnostic to
+ * the concrete type and only looks at that name.
  *
- * @param error - Valor capturado que se desea clasificar.
- * @returns `true` si el error representa un aborto.
+ * @param error - Captured value to classify.
+ * @returns `true` when the error represents an abort.
  */
 function isAbortError(error: unknown): boolean {
-  // No se usa `instanceof Error`: en Node `fetch` rechaza con un `DOMException`,
-  // que no hereda de `Error`. Basta con inspeccionar el nombre del error.
+  // `instanceof Error` is deliberately avoided: in Node, `fetch` rejects with a
+  // `DOMException`, which does not inherit from `Error`. The name is enough.
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    'name' in error &&
-    (error as { name: unknown }).name === 'AbortError'
+    typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
   );
 }
 
 /**
- * Ejecuta una operación de red imponiéndole un tiempo máximo de espera.
+ * Runs a network operation under a maximum wait time.
  *
- * Si `timeout` es `0` o `undefined`, no hay límite: la operación se ejecuta tal
- * cual, propagando la `externalSignal` recibida sin crear temporizadores. Con un
- * timeout positivo, se crea un `AbortController` propio (combinado con la señal
- * externa, si la hay) y un temporizador que, al expirar, cancela la operación; en
- * ese caso el rechazo por aborto se traduce a un {@link TimeoutError}. Cualquier
- * otro error —incluido un aborto provocado por la señal externa— se propaga sin
- * modificarse. El temporizador y los listeners se limpian siempre.
+ * When `timeout` is `0` or `undefined` there is no deadline: the operation runs
+ * as-is, propagating the `externalSignal` it received without creating any timer.
+ * With a positive timeout, a dedicated `AbortController` is created (combined with
+ * the external signal, if any) along with a timer that cancels the operation on
+ * expiry; in that case the abort rejection is translated into a
+ * {@link TimeoutError}. Any other error — including an abort triggered by the
+ * external signal — propagates unchanged. The timer and listeners are always
+ * cleaned up.
  *
- * @typeParam T - Tipo del valor que resuelve la operación.
- * @param timeout - Tiempo máximo en milisegundos. `0`/`undefined` = sin límite.
- * @param externalSignal - Señal de aborto externa a combinar con el timeout, si existe.
- * @param operation - Operación a ejecutar; recibe la señal (combinada) que debe respetar.
- * @param config - Configuración de la petición, adjuntada al {@link TimeoutError} para diagnóstico.
- * @returns El valor que resuelve la operación.
- * @throws {TimeoutError} Si se agota el tiempo de espera y la operación es cancelada.
+ * @typeParam T - Type of the value the operation resolves with.
+ * @param timeout - Maximum time in milliseconds. `0`/`undefined` = no deadline.
+ * @param externalSignal - External abort signal to combine with the timeout, if any.
+ * @param operation - Operation to run; receives the (combined) signal it must honour.
+ * @param config - Request configuration, attached to the {@link TimeoutError} for diagnostics.
+ * @returns The value the operation resolves with.
+ * @throws {TimeoutError} If the deadline expires and the operation is cancelled.
  */
 export async function withTimeout<T>(
   timeout: number | undefined,
@@ -60,8 +58,8 @@ export async function withTimeout<T>(
   operation: (signal: AbortSignal | undefined) => Promise<T>,
   config?: RequestConfig,
 ): Promise<T> {
-  // Sin límite de tiempo: se ejecuta la operación directamente, respetando solo
-  // la señal externa (si la hay). No se crean AbortController ni temporizadores.
+  // No deadline: run the operation directly, honouring only the external signal
+  // (if any). No AbortController and no timer are created.
   if (!timeout || timeout <= 0) {
     return operation(externalSignal);
   }
@@ -69,8 +67,8 @@ export async function withTimeout<T>(
   const controller = new AbortController();
   let timedOut = false;
 
-  // Combina la señal externa con el controlador del timeout: si el consumidor
-  // aborta manualmente, el controlador propio también se aborta.
+  // Combines the external signal with the timeout controller: if the consumer
+  // aborts manually, our own controller aborts too.
   const onExternalAbort = () => controller.abort(externalSignal?.reason);
   if (externalSignal) {
     if (externalSignal.aborted) {
@@ -88,8 +86,8 @@ export async function withTimeout<T>(
   try {
     return await operation(controller.signal);
   } catch (error) {
-    // Solo se considera timeout si fue nuestro temporizador el que abortó; un
-    // aborto de la señal externa (u otro error) se propaga sin transformarse.
+    // Only counts as a timeout when our own timer did the aborting; an abort from
+    // the external signal (or any other error) propagates untransformed.
     if (timedOut && isAbortError(error)) {
       throw new TimeoutError(timeout, { config, cause: error });
     }

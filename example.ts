@@ -1,17 +1,17 @@
 /**
- * Ejemplo end-to-end de SmartFetch.
+ * End-to-end SmartFetch example.
  *
- * Recorre toda la superficie pública de la librería contra una API real
- * (jsonplaceholder) y, para los reintentos, contra un adaptador simulado en
- * local. Pensado como prueba de humo manual:
+ * Walks the whole public surface of the library against a real API
+ * (jsonplaceholder) and, for the retry section, against a locally simulated
+ * adapter. Meant as a manual smoke test:
  *
  *   npx tsx example.ts
  *
- * Secciones:
- *   1. Verbos HTTP: GET / POST / PUT / PATCH / DELETE.
- *   2. Interceptores de petición y respuesta (Programación Orientada a Aspectos).
- *   3. Timeout configurable (AbortController → TimeoutError).
- *   4. Reintentos + backoff con un FetchAdapter inyectado (patrón Adapter).
+ * Sections:
+ *   1. HTTP verbs: GET / POST / PUT / PATCH / DELETE.
+ *   2. Request and response interceptors (aspect-oriented hooks).
+ *   3. Configurable timeout (AbortController → TimeoutError).
+ *   4. Retries + backoff with an injected FetchAdapter (Adapter pattern).
  */
 
 import {
@@ -24,7 +24,7 @@ import {
 
 const API = 'https://jsonplaceholder.typicode.com';
 
-/** Forma de un recurso `post` de jsonplaceholder. */
+/** Shape of a jsonplaceholder `post` resource. */
 interface Post {
   id: number;
   userId: number;
@@ -32,76 +32,76 @@ interface Post {
   body: string;
 }
 
-/** Sección 1 + 2: verbos HTTP con interceptores enganchados. */
-async function verbosEInterceptores(): Promise<void> {
-  console.log('\n=== 1. Verbos HTTP + 2. Interceptores ===');
+/** Sections 1 + 2: HTTP verbs with interceptors attached. */
+async function verbsAndInterceptors(): Promise<void> {
+  console.log('\n=== 1. HTTP verbs + 2. Interceptors ===');
 
   const client = new SmartFetch({ baseURL: API });
 
-  // Interceptor de PETICIÓN: añade una cabecera y registra método + ruta.
+  // REQUEST interceptor: adds a header and logs method + path.
   client.interceptors.request.use((config) => {
     config.headers = { ...config.headers, 'X-Demo': 'smartfetch' };
     console.log(`  -> ${config.method ?? 'GET'} ${config.url ?? ''}`);
     return config;
   });
 
-  // Interceptor de RESPUESTA: registra el estado recibido.
+  // RESPONSE interceptor: logs the status received.
   client.interceptors.response.use((response) => {
     console.log(`  <- ${response.status} ${response.statusText}`);
     return response;
   });
 
-  // GET con parámetros de consulta.
+  // GET with query parameters.
   const list = await client.get<Post[]>('/posts', { params: { userId: 1 } });
   console.log(`GET /posts?userId=1 -> ${list.status} (${list.data.length} posts)`);
 
-  // POST: crear un recurso (el cuerpo va como 2º argumento, estilo axios).
+  // POST: create a resource (the body is the 2nd argument, axios-style).
   const created = await client.post<Post>('/posts', {
-    title: 'Hola',
-    body: 'Cuerpo del post',
+    title: 'Hello',
+    body: 'Post body',
     userId: 1,
   });
-  console.log(`POST /posts -> creado con id ${created.data.id}`);
+  console.log(`POST /posts -> created with id ${created.data.id}`);
 
-  // PUT: reemplazo completo del recurso 1.
+  // PUT: full replacement of resource 1.
   const replaced = await client.put<Post>('/posts/1', {
     id: 1,
-    title: 'Reemplazado',
-    body: 'Nuevo cuerpo',
+    title: 'Replaced',
+    body: 'New body',
     userId: 1,
   });
   console.log(`PUT /posts/1 -> title = "${replaced.data.title}"`);
 
-  // PATCH: actualización parcial del recurso 1.
-  const patched = await client.patch<Post>('/posts/1', { title: 'Parcheado' });
+  // PATCH: partial update of resource 1.
+  const patched = await client.patch<Post>('/posts/1', { title: 'Patched' });
   console.log(`PATCH /posts/1 -> title = "${patched.data.title}"`);
 
-  // DELETE: sin cuerpo posicional.
+  // DELETE: no positional body.
   const deleted = await client.delete('/posts/1');
   console.log(`DELETE /posts/1 -> ${deleted.status}`);
 
-  // Manejo de un error HTTP (recurso inexistente).
+  // Handling an HTTP error (non-existent resource).
   try {
     await client.get('/posts/0');
   } catch (error) {
     if (error instanceof HttpError) {
-      console.log(`Error HTTP esperado: ${error.status}`);
+      console.log(`Expected HTTP error: ${error.status}`);
     }
   }
 }
 
-/** Sección 3: timeout configurable. */
+/** Section 3: configurable timeout. */
 async function timeout(): Promise<void> {
   console.log('\n=== 3. Timeout ===');
 
-  // Un plazo de 1 ms es imposible de cumplir contra la red real: aborta.
+  // A 1 ms deadline is impossible to meet against the real network: it aborts.
   const client = new SmartFetch({ baseURL: API, timeout: 1 });
   try {
     await client.get('/posts');
-    console.log('Inesperado: la petición no expiró.');
+    console.log('Unexpected: the request did not time out.');
   } catch (error) {
     if (error instanceof TimeoutError) {
-      console.log('TimeoutError esperado (la petición se abortó por el plazo).');
+      console.log('Expected TimeoutError (the request was aborted by the deadline).');
     } else {
       throw error;
     }
@@ -109,21 +109,21 @@ async function timeout(): Promise<void> {
 }
 
 /**
- * Sección 4: reintentos + backoff con un FetchAdapter inyectado.
+ * Section 4: retries + backoff with an injected FetchAdapter.
  *
- * El adaptador simula un servicio inestable: responde 503 en los dos primeros
- * intentos y 200 en el tercero. La política de reintentos por defecto reintenta
- * ante 5xx, así que la petición acaba teniendo éxito sin tocar la red externa.
+ * The adapter simulates a flaky service: it answers 503 on the first two attempts
+ * and 200 on the third. The default retry policy retries on 5xx, so the request
+ * ends up succeeding without touching the external network.
  */
-async function reintentos(): Promise<void> {
-  console.log('\n=== 4. Reintentos + backoff (adaptador simulado) ===');
+async function retries(): Promise<void> {
+  console.log('\n=== 4. Retries + backoff (simulated adapter) ===');
 
-  let intento = 0;
+  let attempt = 0;
   const adapter: FetchAdapter = async (input) => {
-    intento += 1;
-    const fallando = intento < 3;
-    console.log(`  intento ${intento} -> ${fallando ? '503' : '200'} (${input})`);
-    return fallando
+    attempt += 1;
+    const failing = attempt < 3;
+    console.log(`  attempt ${attempt} -> ${failing ? '503' : '200'} (${input})`);
+    return failing
       ? new Response('Service Unavailable', { status: 503, statusText: 'Service Unavailable' })
       : new Response(JSON.stringify({ ok: true }), {
           status: 200,
@@ -136,18 +136,18 @@ async function reintentos(): Promise<void> {
     { fetch: adapter },
   );
 
-  const { data, status } = await client.get<{ ok: boolean }>('/inestable');
-  console.log(`Éxito tras ${intento} intentos -> ${status}, data = ${JSON.stringify(data)}`);
+  const { data, status } = await client.get<{ ok: boolean }>('/flaky');
+  console.log(`Succeeded after ${attempt} attempts -> ${status}, data = ${JSON.stringify(data)}`);
 }
 
 async function main(): Promise<void> {
-  await verbosEInterceptores();
+  await verbsAndInterceptors();
   await timeout();
-  await reintentos();
-  console.log('\nListo.');
+  await retries();
+  console.log('\nDone.');
 }
 
 main().catch((error) => {
-  console.error('Fallo inesperado:', error);
+  console.error('Unexpected failure:', error);
   process.exitCode = 1;
 });

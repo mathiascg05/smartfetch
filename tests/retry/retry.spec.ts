@@ -29,9 +29,9 @@ describe('withRetry', () => {
       throw new Error('fallo persistente');
     });
 
-    await expect(
-      withRetry(operation, { retries: 2, shouldRetry: always }),
-    ).rejects.toThrow('fallo persistente');
+    await expect(withRetry(operation, { retries: 2, shouldRetry: always })).rejects.toThrow(
+      'fallo persistente',
+    );
     // 1 intento original + 2 reintentos = 3 llamadas.
     expect(operation).toHaveBeenCalledTimes(3);
   });
@@ -56,9 +56,9 @@ describe('withRetry', () => {
       throw new Error('no reintentable');
     });
 
-    await expect(
-      withRetry(operation, { retries: 3, shouldRetry: () => false }),
-    ).rejects.toThrow('no reintentable');
+    await expect(withRetry(operation, { retries: 3, shouldRetry: () => false })).rejects.toThrow(
+      'no reintentable',
+    );
     expect(operation).toHaveBeenCalledTimes(1);
   });
 

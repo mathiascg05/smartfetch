@@ -12,12 +12,16 @@ import type { FetchAdapter } from '../src/types.js';
  */
 describe('SmartFetch (núcleo + GET)', () => {
   /** Crea un adaptador mock que devuelve una respuesta JSON dada. */
-  function jsonAdapter(body: unknown, init: ResponseInit = { status: 200 }): jest.Mock<FetchAdapter> {
-    return jest.fn<FetchAdapter>(async () =>
-      new Response(JSON.stringify(body), {
-        headers: { 'Content-Type': 'application/json' },
-        ...init,
-      }),
+  function jsonAdapter(
+    body: unknown,
+    init: ResponseInit = { status: 200 },
+  ): jest.Mock<FetchAdapter> {
+    return jest.fn<FetchAdapter>(
+      async () =>
+        new Response(JSON.stringify(body), {
+          headers: { 'Content-Type': 'application/json' },
+          ...init,
+        }),
     );
   }
 
@@ -63,7 +67,9 @@ describe('SmartFetch (núcleo + GET)', () => {
 
   describe('parseo según responseType', () => {
     it('devuelve texto plano con responseType "text"', async () => {
-      const fetchMock = jest.fn<FetchAdapter>(async () => new Response('hola mundo', { status: 200 }));
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () => new Response('hola mundo', { status: 200 }),
+      );
       const client = new SmartFetch({}, { fetch: fetchMock });
 
       const res = await client.get<string>('https://api.x.com/saludo', { responseType: 'text' });
@@ -91,15 +97,18 @@ describe('SmartFetch (núcleo + GET)', () => {
     });
 
     it('devuelve un FormData con responseType "formData"', async () => {
-      const fetchMock = jest.fn<FetchAdapter>(async () =>
-        new Response('a=1&b=2', {
-          status: 200,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        }),
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () =>
+          new Response('a=1&b=2', {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          }),
       );
       const client = new SmartFetch({}, { fetch: fetchMock });
 
-      const res = await client.get<FormData>('https://api.x.com/form', { responseType: 'formData' });
+      const res = await client.get<FormData>('https://api.x.com/form', {
+        responseType: 'formData',
+      });
       expect(res.data).toBeInstanceOf(FormData);
       expect(res.data.get('a')).toBe('1');
       expect(res.data.get('b')).toBe('2');
@@ -129,11 +138,12 @@ describe('SmartFetch (núcleo + GET)', () => {
 
   describe('normalización de parseo y errores', () => {
     it('lanza ParseError ante un JSON malformado en una respuesta 2xx', async () => {
-      const fetchMock = jest.fn<FetchAdapter>(async () =>
-        new Response('{no-json', {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () =>
+          new Response('{no-json', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
       );
       const client = new SmartFetch({}, { fetch: fetchMock });
 
@@ -151,11 +161,12 @@ describe('SmartFetch (núcleo + GET)', () => {
     });
 
     it('prioriza HttpError sobre el parseo cuando un 5xx trae un cuerpo malformado', async () => {
-      const fetchMock = jest.fn<FetchAdapter>(async () =>
-        new Response('<html>500</html>', {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () =>
+          new Response('<html>500</html>', {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          }),
       );
       const client = new SmartFetch({}, { fetch: fetchMock });
 
@@ -171,11 +182,12 @@ describe('SmartFetch (núcleo + GET)', () => {
     });
 
     it('adjunta el cuerpo crudo como data en un 404 con JSON malformado', async () => {
-      const fetchMock = jest.fn<FetchAdapter>(async () =>
-        new Response('oops', {
-          status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      const fetchMock = jest.fn<FetchAdapter>(
+        async () =>
+          new Response('oops', {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          }),
       );
       const client = new SmartFetch({}, { fetch: fetchMock });
 
@@ -294,7 +306,11 @@ describe('SmartFetch (núcleo + GET)', () => {
       const fetchMock = jsonAdapter({});
       const client = new SmartFetch({}, { fetch: fetchMock });
 
-      await client.post('https://api.x.com/u', { a: 1 }, { headers: { 'Content-Type': 'application/vnd.api+json' } });
+      await client.post(
+        'https://api.x.com/u',
+        { a: 1 },
+        { headers: { 'Content-Type': 'application/vnd.api+json' } },
+      );
 
       const [, init] = fetchMock.mock.calls[0];
       const headers = init?.headers as Record<string, string>;
