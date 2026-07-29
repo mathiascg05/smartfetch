@@ -313,16 +313,17 @@ await client.get('/users', { params: { page: 1 } });
 
 Every method resolves with a `SmartFetchResponse<T>`:
 
-| Field        | Type                     | Description                                                      |
-| ------------ | ------------------------ | ---------------------------------------------------------------- |
-| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304). |
-| `status`     | `number`                 | HTTP status code.                                                |
-| `statusText` | `string`                 | Status text.                                                     |
-| `headers`    | `Record<string, string>` | Response headers.                                                |
-| `ok`         | `boolean`                | `true` when the status counted as successful.                    |
-| `url`        | `string`                 | Final request URL.                                               |
-| `config`     | `RequestConfig`          | Effective configuration used.                                    |
-| `raw`        | `Response`               | The untouched native `Response`.                                 |
+| Field        | Type                     | Description                                                         |
+| ------------ | ------------------------ | ------------------------------------------------------------------- |
+| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304).    |
+| `status`     | `number`                 | HTTP status code.                                                   |
+| `statusText` | `string`                 | Status text.                                                        |
+| `headers`    | `Record<string, string>` | Response headers.                                                   |
+| `setCookie`  | `string[]`               | Every `Set-Cookie` header, uncollapsed (empty when there are none). |
+| `ok`         | `boolean`                | `true` when the status counted as successful.                       |
+| `url`        | `string`                 | Final request URL.                                                  |
+| `config`     | `RequestConfig`          | Effective configuration used.                                       |
+| `raw`        | `Response`               | The untouched native `Response`.                                    |
 
 Failures are normalized into a typed error hierarchy. Everything extends `SmartFetchError`, which
 exposes the `type` discriminator plus guards for narrowing:

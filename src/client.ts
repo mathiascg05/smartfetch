@@ -71,6 +71,26 @@ function isReplayableBody(body: unknown): boolean {
   return !(typeof body === 'object' && Symbol.asyncIterator in (body as Record<symbol, unknown>));
 }
 
+/**
+ * Extracts every `Set-Cookie` header without collapsing repeats.
+ *
+ * A server may send `Set-Cookie` several times, and folding those into a flat
+ * record keeps only the last one. `Headers.getSetCookie()` is the API designed for
+ * exactly this and is used when available (Node 18.14+, modern browsers).
+ *
+ * The fallback returns whatever the single-value getter reports. Joined cookies
+ * are deliberately **not** split on commas: `Expires` dates contain commas, so
+ * splitting corrupts the values. Returning one entry is lossy but never wrong.
+ */
+function readSetCookie(headers: Headers): string[] {
+  const withGetter = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof withGetter.getSetCookie === 'function') {
+    return withGetter.getSetCookie();
+  }
+  const single = headers.get('set-cookie');
+  return single === null ? [] : [single];
+}
+
 /** Looks up a header by name, case-insensitively. */
 function hasHeader(headers: HeadersInit, name: string): boolean {
   const target = name.toLowerCase();
@@ -523,6 +543,7 @@ export class SmartFetch {
       status: raw.status,
       statusText: raw.statusText,
       headers,
+      setCookie: readSetCookie(raw.headers),
       ok: raw.ok,
       url: raw.url || url,
       config,

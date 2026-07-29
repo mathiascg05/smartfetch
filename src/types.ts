@@ -158,8 +158,24 @@ export interface SmartFetchResponse<T = unknown> {
   /** Human-readable text of the HTTP status (for example, `"OK"`). */
   statusText: string;
 
-  /** Response headers as key/value pairs. */
+  /**
+   * Response headers as key/value pairs.
+   *
+   * A flat record cannot represent a header sent more than once, so any repeated
+   * header collapses to its last value here. In practice `Set-Cookie` is the only
+   * header that matters for this, and it is exposed intact in
+   * {@link SmartFetchResponse.setCookie}.
+   */
   headers: Record<string, string>;
+
+  /**
+   * Every `Set-Cookie` header, in order, with none collapsed.
+   *
+   * Empty when the response carried no cookies. This exists because
+   * {@link SmartFetchResponse.headers} is a flat record and would silently drop
+   * all but the last cookie.
+   */
+  setCookie: string[];
 
   /** `true` when the status code falls in the 2xx range. */
   ok: boolean;
