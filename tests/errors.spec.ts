@@ -68,7 +68,7 @@ describe('modelo de errores', () => {
       expect(error).toBeInstanceOf(NetworkError);
       expect(error.type).toBe('network');
       expect(error.name).toBe('NetworkError');
-      expect(error.message).toMatch(/red/i);
+      expect(error.message).toMatch(/network/i);
     });
 
     it('acepta un mensaje personalizado y la causa', () => {

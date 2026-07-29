@@ -18,11 +18,12 @@ import type { FetchAdapter } from '../src/types.js';
 describe('factory: createClient + SmartFetchBuilder', () => {
   /** Adaptador mock que registra la URL/init recibidos y devuelve un JSON fijo. */
   function jsonAdapter(): jest.Mock<FetchAdapter> {
-    return jest.fn<FetchAdapter>(async () =>
-      new Response(JSON.stringify({ ok: true }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      }),
+    return jest.fn<FetchAdapter>(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        }),
     );
   }
 

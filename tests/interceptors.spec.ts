@@ -13,12 +13,16 @@ import type { FetchAdapter, SmartFetchResponse } from '../src/types.js';
  */
 describe('Interceptores (AOP)', () => {
   /** Crea un adaptador mock que devuelve una respuesta JSON dada. */
-  function jsonAdapter(body: unknown, init: ResponseInit = { status: 200 }): jest.Mock<FetchAdapter> {
-    return jest.fn<FetchAdapter>(async () =>
-      new Response(JSON.stringify(body), {
-        headers: { 'Content-Type': 'application/json' },
-        ...init,
-      }),
+  function jsonAdapter(
+    body: unknown,
+    init: ResponseInit = { status: 200 },
+  ): jest.Mock<FetchAdapter> {
+    return jest.fn<FetchAdapter>(
+      async () =>
+        new Response(JSON.stringify(body), {
+          headers: { 'Content-Type': 'application/json' },
+          ...init,
+        }),
     );
   }
 
@@ -78,7 +82,7 @@ describe('Interceptores (AOP)', () => {
 
       client.interceptors.response.use((response) => {
         const original = response.data as { valor: number };
-        return { ...response, data: { valor: original.valor * 2 } } as SmartFetchResponse;
+        return { ...response, data: { valor: original.valor * 2 } };
       });
 
       const res = await client.get<{ valor: number }>('/dato');

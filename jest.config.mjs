@@ -22,4 +22,15 @@ export default {
     ],
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts'],
+  // Full coverage is a property of this library, not an aspiration: CI runs
+  // `test:coverage`, so any uncovered branch fails the build rather than
+  // silently eroding the number.
+  coverageThreshold: {
+    global: {
+      branches: 100,
+      functions: 100,
+      lines: 100,
+      statements: 100,
+    },
+  },
 };

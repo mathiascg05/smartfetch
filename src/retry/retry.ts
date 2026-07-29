@@ -1,14 +1,14 @@
 /**
- * Motor de reintentos de SmartFetch.
+ * SmartFetch retry engine.
  *
- * Expone {@link withRetry}, una utilidad que ejecuta una operación y, si falla de
- * forma transitoria, la vuelve a intentar hasta un número máximo de veces,
- * esperando entre intentos según una {@link BackoffStrategy}. La decisión de
- * reintentar se delega en un predicado ({@link RetryPredicate}); por defecto se
- * reintenta solo ante errores de red y respuestas HTTP 5xx —nunca ante un timeout
- * ni ante errores de cliente (4xx)—, cumpliendo el requisito del proyecto de un
- * único intento salvo configuración explícita. Es un módulo interno: no forma
- * parte de la API pública (sí lo son las estrategias de backoff).
+ * Exposes {@link withRetry}, a utility that runs an operation and, when it fails
+ * transiently, retries it up to a maximum number of times, waiting between
+ * attempts according to a {@link BackoffStrategy}. The decision to retry is
+ * delegated to a predicate ({@link RetryPredicate}); by default only network
+ * errors and HTTP 5xx responses are retried — never a timeout, never a client
+ * (4xx) error — so a request performs a single attempt unless retries are
+ * explicitly configured. This is an internal module: it is not part of the public
+ * API, though the backoff strategies are.
  *
  * @module retry/retry
  */
@@ -18,33 +18,33 @@ import type { RetryPredicate } from '../types.js';
 import type { BackoffStrategy } from './backoff.js';
 
 /**
- * Opciones que gobiernan el comportamiento de {@link withRetry}.
+ * Options governing {@link withRetry}.
  */
 export interface RetryOptions {
-  /** Número máximo de reintentos adicionales tras el intento original. */
+  /** Maximum number of retries after the original attempt. */
   retries: number;
 
-  /** Estrategia de espera entre reintentos. Si se omite, se reintenta sin esperar. */
+  /** Wait strategy between retries. When omitted, retries happen with no wait. */
   backoff?: BackoffStrategy;
 
-  /** Predicado que decide, ante un error, si procede reintentar. */
+  /** Predicate deciding, given an error, whether a retry is warranted. */
   shouldRetry: RetryPredicate;
 
-  /** Señal de aborto externa: si se dispara durante la espera, se cancela el reintento. */
+  /** External abort signal: if it fires during the wait, the retry is cancelled. */
   signal?: AbortSignal;
 }
 
 /**
- * Política de reintento por defecto de la librería.
+ * Default retry policy of the library.
  *
- * Reintenta únicamente ante fallos que suelen ser transitorios: errores de red
- * ({@link NetworkError}) y respuestas del servidor con código 5xx
- * ({@link HttpError} con `status` entre 500 y 599). No reintenta ante timeouts,
- * errores de cliente (4xx), errores de construcción de la petición ni fallos sin
- * clasificar.
+ * Retries only failures that are usually transient: network errors
+ * ({@link NetworkError}) and server responses with a 5xx status
+ * ({@link HttpError} whose `status` falls between 500 and 599). It does not retry
+ * timeouts, client (4xx) errors, request-construction errors or unclassified
+ * failures.
  *
- * @param error - Error capturado en el intento fallido.
- * @returns `true` si el error se considera transitorio y merece reintentarse.
+ * @param error - Error captured on the failed attempt.
+ * @returns `true` when the error counts as transient and is worth retrying.
  */
 export function defaultShouldRetry(error: unknown): boolean {
   if (error instanceof HttpError) {
@@ -54,24 +54,29 @@ export function defaultShouldRetry(error: unknown): boolean {
 }
 
 /**
- * Espera un tiempo determinado, cancelable mediante una señal de aborto.
+ * Waits for a given time, cancellable through an abort signal.
  *
- * Resuelve al cumplirse el plazo; si la señal se aborta antes, rechaza con el
- * motivo del aborto (para que {@link withRetry} propague la cancelación sin
- * consumir más reintentos). El temporizador y el listener se limpian siempre.
+ * Resolves once the delay elapses; if the signal aborts first, it rejects with the
+ * abort reason (so {@link withRetry} propagates the cancellation without spending
+ * another retry). The timer and the listener are always cleaned up.
  *
- * @param ms - Milisegundos a esperar.
- * @param signal - Señal de aborto que puede acortar la espera, si existe.
+ * @param ms - Milliseconds to wait.
+ * @param signal - Abort signal that may cut the wait short, if any.
  */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    // `AbortSignal.reason` is whatever the caller passed to `abort()` — it is not
+    // required to be an `Error`. Propagating it verbatim is the contract, so the
+    // prefer-promise-reject-errors rule is deliberately relaxed here.
     if (signal?.aborted) {
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
       reject(signal.reason);
       return;
     }
 
     const onAbort = () => {
       clearTimeout(timer);
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
       reject(signal?.reason);
     };
 
@@ -85,18 +90,18 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Ejecuta una operación reintentándola ante fallos transitorios.
+ * Runs an operation, retrying it on transient failures.
  *
- * Realiza el intento original y, cada vez que la operación rechaza, consulta
- * `shouldRetry`: si aún quedan reintentos y el predicado lo autoriza, espera el
- * retardo indicado por `backoff` (si lo hay) y reintenta; en caso contrario,
- * propaga el último error. La `operation` recibe el número de intento (`0` para
- * el original, `1` para el primer reintento, etc.).
+ * Performs the original attempt and, each time the operation rejects, consults
+ * `shouldRetry`: if retries remain and the predicate allows it, waits the delay
+ * given by `backoff` (when present) and retries; otherwise it propagates the last
+ * error. The `operation` receives the attempt number (`0` for the original, `1`
+ * for the first retry, and so on).
  *
- * @typeParam T - Tipo del valor que resuelve la operación.
- * @param operation - Operación a ejecutar; recibe el número de intento (0-based).
- * @param options - Configuración de reintentos (máximo, backoff, predicado y señal).
- * @returns El valor que resuelve la operación en cuanto uno de los intentos tiene éxito.
+ * @typeParam T - Type of the value the operation resolves with.
+ * @param operation - Operation to run; receives the attempt number (0-based).
+ * @param options - Retry configuration (maximum, backoff, predicate and signal).
+ * @returns The value resolved by the first attempt that succeeds.
  */
 export async function withRetry<T>(
   operation: (attempt: number) => Promise<T>,
@@ -109,8 +114,8 @@ export async function withRetry<T>(
       return await operation(attempt);
     } catch (error) {
       const nextAttempt = attempt + 1;
-      // Se agota el presupuesto de reintentos o el error no es reintentable:
-      // se propaga tal cual, sin transformarlo.
+      // Either the retry budget is exhausted or the error is not retryable: it is
+      // propagated as-is, untransformed.
       if (nextAttempt > maxRetries || !options.shouldRetry(error, nextAttempt)) {
         throw error;
       }
