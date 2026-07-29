@@ -24,8 +24,6 @@ jobs:
       # Necesario para que npm pueda firmar la atestación de procedencia vía OIDC.
       id-token: write
 
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
       - uses: actions/checkout@v5
@@ -62,17 +60,31 @@ jobs:
             exit 1
           fi
 
-      # El token no puede consultarse en un `if:` de job, así que se expone como
-      # env del job y se comprueba a nivel de paso.
-      - name: Publish
-        if: env.NODE_AUTH_TOKEN != ''
-        run: npm publish --provenance --access public
+      # El secreto se comprueba en shell, no en una expresión: `setup-node` con
+      # `registry-url` rellena NODE_AUTH_TOKEN con un placeholder cuando el
+      # secreto está vacío, así que una comparación con '' nunca resulta cierta.
+      - name: Check for npm credentials
+        id: creds
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
 
-      # Sin token el tag sigue siendo válido y la verificación de arriba sirve
-      # igual; simplemente no se publica. Evita dejar la corrida en rojo por una
-      # credencial que aún no se ha configurado.
-      - name: Skip publish (no npm token configured)
-        if: env.NODE_AUTH_TOKEN == ''
+      - name: Publish
+        if: steps.creds.outputs.available == 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Sin credenciales el tag sigue siendo válido y la verificación de arriba
+      # sirve igual; simplemente no se publica. Evita dejar la corrida en rojo por
+      # una credencial que todavía no se ha configurado.
+      - name: Skip publish (no npm credentials configured)
+        if: steps.creds.outputs.available != 'true'
         run: |
           echo "::notice::NPM_TOKEN no está configurado: se omite la publicación."
           echo "Para publicar: añade el secreto NPM_TOKEN y configura un trusted"
