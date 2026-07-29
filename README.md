@@ -264,7 +264,8 @@ and/or per request; request values are merged over the client ones.
 | `headers`        | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below).                                   |
 | `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below). |
 | `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                   |
-| `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                                                       |
+| `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline). Bounds a single attempt.                              |
+| `totalTimeout`   | `number`                      | Milliseconds for the whole operation, backoff waits included (`0`/omitted = no global deadline).                |
 | `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt). Not compatible with a stream body — see below.       |
 | `backoff`        | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                                                       |
 | `retryOn`        | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.                                           |
@@ -373,8 +374,9 @@ before adopting it:
 - **No `RequestInit` passthrough for `credentials` / `mode` / `cache` / `redirect` / `keepalive`.**
   In practice this means **cookie-based authentication in the browser is not supported**.
 - **No `HEAD` or `OPTIONS`** — only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`.
-- **Headers only as `Record<string, string>`** — no `Headers` instances and no repeated
-  multi-value headers.
+- **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
+  multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
+  in `response.setCookie`.
 - **The `Retry-After` header is not honoured** on 429/503; the configured backoff always wins.
 - **`ExponentialBackoff` applies no jitter**, so concurrent clients can retry in lockstep.
 - **Tested on Node ≥ 18 only.** The code is runtime-agnostic and should work in browsers and edge

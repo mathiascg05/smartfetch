@@ -96,10 +96,24 @@ export interface RequestConfig {
   body?: unknown;
 
   /**
-   * Maximum time to wait, in milliseconds, before aborting the request.
+   * Maximum time to wait, in milliseconds, before aborting a **single attempt**.
    * `0` or `undefined` means no deadline.
+   *
+   * With retries configured this does not bound the total time: five attempts of
+   * 5 s each can take 25 s plus the backoff waits. Use
+   * {@link RequestConfig.totalTimeout} for that.
    */
   timeout?: number;
+
+  /**
+   * Maximum time, in milliseconds, for the **whole operation** — every attempt
+   * plus the backoff waits between them. `0` or `undefined` means no global
+   * deadline.
+   *
+   * Composes with {@link RequestConfig.timeout}: whichever expires first aborts
+   * the request, and a global expiry raises a `TimeoutError` carrying this value.
+   */
+  totalTimeout?: number;
 
   /**
    * Number of additional retries after a server (5xx) or network error.

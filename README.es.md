@@ -262,7 +262,8 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 | `headers`        | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
 | `params`         | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
 | `body`           | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
-| `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite).                                                            |
+| `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite). Acota un único intento.                                    |
+| `totalTimeout`   | `number`                      | Milisegundos para la operación completa, esperas de backoff incluidas (`0`/omitido = sin límite global).             |
 | `retries`        | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento). Incompatible con un cuerpo de tipo stream — ver abajo. |
 | `backoff`        | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                    |
 | `retryOn`        | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                       |
@@ -372,8 +373,9 @@ adoptarlo:
 - **No expone `credentials` / `mode` / `cache` / `redirect` / `keepalive` de `RequestInit`.** En la
   práctica esto significa que **la autenticación por cookies en el navegador no está soportada**.
 - **No hay `HEAD` ni `OPTIONS`**: solo `GET`, `POST`, `PUT`, `PATCH` y `DELETE`.
-- **Cabeceras solo como `Record<string, string>`**: sin instancias de `Headers` ni cabeceras
-  repetidas de valor múltiple.
+- **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
+  cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
+  conservan en `response.setCookie`.
 - **No se respeta la cabecera `Retry-After`** en 429/503; siempre manda el backoff configurado.
 - **`ExponentialBackoff` no aplica jitter**, así que varios clientes concurrentes pueden reintentar
   sincronizados.

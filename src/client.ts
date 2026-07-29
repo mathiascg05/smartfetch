@@ -13,7 +13,14 @@
  * @module client
  */
 
-import { CancelledError, HttpError, NetworkError, ParseError, SmartFetchError } from './errors.js';
+import {
+  CancelledError,
+  HttpError,
+  NetworkError,
+  ParseError,
+  SmartFetchError,
+  TimeoutError,
+} from './errors.js';
 import type {
   FetchAdapter,
   HeadersInit,
@@ -336,6 +343,64 @@ export class SmartFetch {
       );
     }
 
+    const totalTimeout = effective.totalTimeout ?? 0;
+    if (totalTimeout <= 0) {
+      return this.runAttempts<T>(effective, retries);
+    }
+
+    // A global deadline needs its own controller so that it can cut the operation
+    // at any point — mid-attempt or mid-backoff — rather than only bounding each
+    // attempt the way `timeout` does.
+    const controller = new AbortController();
+    let expired = false;
+
+    const onExternalAbort = () => controller.abort(effective.signal?.reason);
+    if (effective.signal) {
+      if (effective.signal.aborted) {
+        controller.abort(effective.signal.reason);
+      } else {
+        effective.signal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
+
+    const timer = setTimeout(() => {
+      expired = true;
+      controller.abort();
+    }, totalTimeout);
+
+    // The composed signal replaces the original for the whole run, so both the
+    // per-attempt timeout and the backoff waits honour the global deadline.
+    return this.runAttempts<T>({ ...effective, signal: controller.signal }, retries)
+      .catch((error: unknown) => {
+        // Only our own timer turns the abort into a TimeoutError; an external
+        // cancellation stays a CancelledError.
+        if (expired) {
+          throw new TimeoutError(totalTimeout, { config: effective, cause: error });
+        }
+        throw error;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (effective.signal) {
+          effective.signal.removeEventListener('abort', onExternalAbort);
+        }
+      });
+  }
+
+  /**
+   * Runs the attempt loop for an already-prepared configuration.
+   *
+   * Split out of {@link SmartFetch.dispatch} so that the global-deadline path can
+   * reuse it with a composed signal.
+   *
+   * @typeParam T - Expected type of the parsed response body.
+   * @param effective - Effective configuration, with its final `signal`.
+   * @param retries - Retry budget for this request.
+   */
+  private runAttempts<T>(
+    effective: RequestConfig,
+    retries: number,
+  ): Promise<SmartFetchResponse<T>> {
     // URL and native options are built once and reused across attempts (the retry
     // engine re-runs performAttempt, not this).
     const url = buildURL(effective);
