@@ -4,6 +4,7 @@
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
 [![tamaño](https://img.shields.io/badge/bundle%20ESM-3.6%20kB%20gzip-brightgreen.svg)](#pruebas)
+[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 

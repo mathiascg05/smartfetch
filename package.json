@@ -1,6 +1,6 @@
 {
   "name": "@mathiascg05/smartfetch",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "A resilient, zero-dependency TypeScript wrapper around the native fetch API: timeouts, retries with pluggable backoff, interceptors and typed errors.",
   "keywords": [
     "fetch",
