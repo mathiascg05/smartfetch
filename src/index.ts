@@ -43,7 +43,7 @@ export default smartfetch;
 
 // Retry backoff strategies (Strategy pattern).
 export { FixedBackoff, ExponentialBackoff } from './retry/backoff.js';
-export type { BackoffStrategy } from './retry/backoff.js';
+export type { BackoffStrategy, ExponentialBackoffOptions } from './retry/backoff.js';
 
 // Request/response interceptors (aspect-oriented hooks).
 export { InterceptorManager } from './interceptors.js';

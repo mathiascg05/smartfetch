@@ -65,6 +65,7 @@
     "typecheck": "tsc --noEmit",
     "check:pack": "publint && attw --pack",
     "size": "size-limit",
+    "docs": "typedoc",
     "mutation": "NODE_OPTIONS=--experimental-vm-modules stryker run"
   },
   "size-limit": [

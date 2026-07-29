@@ -199,7 +199,9 @@ export class SmartFetch {
    * });
    */
   readonly interceptors = {
+    /** Chain applied to the {@link RequestConfig} before the request is sent. */
     request: new InterceptorManager<RequestConfig>(),
+    /** Chain applied to the {@link SmartFetchResponse} once it arrives. */
     response: new InterceptorManager<SmartFetchResponse>(),
   };
 
