@@ -203,12 +203,21 @@ export class SmartFetch {
    * @returns The effective configuration the request will run with.
    */
   private mergeConfig(config: RequestConfig): RequestConfig {
-    return {
+    const merged: RequestConfig = {
       ...this.defaults,
       ...config,
       method: config.method ?? this.defaults.method ?? 'GET',
+      // `headers` and `params` are the only fields merged in depth; a plain spread
+      // would drop client-level defaults (an API key in `params`, for instance)
+      // the moment a request brought its own.
       headers: mergeHeaders(this.defaults.headers, config.headers),
     };
+
+    if (this.defaults.params ?? config.params) {
+      merged.params = { ...this.defaults.params, ...config.params };
+    }
+
+    return merged;
   }
 
   /**

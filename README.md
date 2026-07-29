@@ -256,21 +256,21 @@ registration order (FIFO), matching `axios`.
 `RequestConfig` (every field is optional). It can be supplied as the client's default configuration
 and/or per request; request values are merged over the client ones.
 
-| Option           | Type                          | Description                                                                   |
-| ---------------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| `baseURL`        | `string`                      | Base URL that relative paths resolve against.                                 |
-| `url`            | `string`                      | Request path or URL (normally the 1st argument of each method).               |
-| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                              |
-| `headers`        | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below). |
-| `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported).            |
-| `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`. |
-| `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                     |
-| `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt).                    |
-| `backoff`        | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                     |
-| `retryOn`        | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.         |
-| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.          |
-| `validateStatus` | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                            |
-| `signal`         | `AbortSignal`                 | External signal for cancelling the request.                                   |
+| Option           | Type                          | Description                                                                                                     |
+| ---------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `baseURL`        | `string`                      | Base URL that relative paths resolve against.                                                                   |
+| `url`            | `string`                      | Request path or URL (normally the 1st argument of each method).                                                 |
+| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                |
+| `headers`        | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below).                                   |
+| `params`         | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below). |
+| `body`           | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                   |
+| `timeout`        | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline).                                                       |
+| `retries`        | `number`                      | Retries on transient failures (default `0` = one attempt).                                                      |
+| `backoff`        | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                                                       |
+| `retryOn`        | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.                                           |
+| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                            |
+| `validateStatus` | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                                                              |
+| `signal`         | `AbortSignal`                 | External signal for cancelling the request.                                                                     |
 
 The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
@@ -282,12 +282,21 @@ Client defaults and per-request configuration are combined per field:
 - **`headers`** merge **case-insensitively** — `content-type` and `Content-Type` are the same
   header, so they never go out duplicated. The request's value wins, and the header is emitted with
   **the capitalization the winning side wrote** (it is not canonicalized).
+- **`params`** merge too, so a client-level default (an API key, a tenant id) survives a request
+  that brings its own parameters. Same-key collisions go to the request; passing `null` or
+  `undefined` drops the parameter entirely, which is how a client default is opted out of.
 - Every other field is **replaced** by the request's value when present.
 
 ```ts
 const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });
 await client.post('/x', body, { headers: { 'Content-Type': 'application/json' } });
 // sends exactly one header: Content-Type: application/json
+```
+
+```ts
+const client = new SmartFetch({ params: { api_key: 'SECRET' } });
+await client.get('/users', { params: { page: 1 } });
+// -> /users?api_key=SECRET&page=1
 ```
 
 ## Response and errors

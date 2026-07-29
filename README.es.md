@@ -254,21 +254,21 @@ en orden de registro (FIFO), igual que en `axios`.
 `RequestConfig` (todos los campos son opcionales). Se puede pasar como configuración por defecto
 del cliente y/o por petición; los valores de la petición se fusionan sobre los del cliente.
 
-| Opción           | Tipo                          | Descripción                                                                    |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------ |
-| `baseURL`        | `string`                      | URL base a la que se resuelven las rutas relativas.                            |
-| `url`            | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).      |
-| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                               |
-| `headers`        | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).             |
-| `params`         | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays).          |
-| `body`           | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.         |
-| `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite).                      |
-| `retries`        | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento).                  |
-| `backoff`        | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                              |
-| `retryOn`        | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto. |
-| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.           |
-| `validateStatus` | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                   |
-| `signal`         | `AbortSignal`                 | Señal externa para cancelar la petición.                                       |
+| Opción           | Tipo                          | Descripción                                                                                                        |
+| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `baseURL`        | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                |
+| `url`            | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                          |
+| `method`         | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                   |
+| `headers`        | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                 |
+| `params`         | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo). |
+| `body`           | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                             |
+| `timeout`        | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite).                                                          |
+| `retries`        | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento).                                                      |
+| `backoff`        | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                  |
+| `retryOn`        | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                     |
+| `responseType`   | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                               |
+| `validateStatus` | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                       |
+| `signal`         | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                           |
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
@@ -280,12 +280,22 @@ La configuración por defecto del cliente y la de cada petición se combinan cam
 - Las **`headers`** se fusionan **sin distinguir mayúsculas** — `content-type` y `Content-Type` son
   la misma cabecera, así que nunca se envían duplicadas. Gana el valor de la petición, y la cabecera
   se emite con **la capitalización que escribió quien gana** (no se canonicaliza).
+- Los **`params`** también se fusionan, de modo que un valor por defecto del cliente (una API key,
+  un id de tenant) sobrevive a una petición que traiga los suyos. Si la clave coincide gana la
+  petición; pasar `null` o `undefined` elimina el parámetro, que es la forma de renunciar a un
+  valor por defecto.
 - El resto de campos se **reemplazan** por el valor de la petición cuando está presente.
 
 ```ts
 const client = new SmartFetch({ headers: { 'content-type': 'application/xml' } });
 await client.post('/x', body, { headers: { 'Content-Type': 'application/json' } });
 // envía exactamente una cabecera: Content-Type: application/json
+```
+
+```ts
+const client = new SmartFetch({ params: { api_key: 'SECRET' } });
+await client.get('/usuarios', { params: { page: 1 } });
+// -> /usuarios?api_key=SECRET&page=1
 ```
 
 ## Respuesta y errores

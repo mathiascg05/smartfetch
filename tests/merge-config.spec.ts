@@ -83,4 +83,71 @@ describe('mergeConfig', () => {
       expect(seen.headers?.['Accept-Language']).toBe('en');
     });
   });
+
+  describe('params', () => {
+    it('conserva los params del cliente cuando la petición trae los suyos', async () => {
+      const { seen, fetchMock } = capturingAdapter();
+      const client = new SmartFetch(
+        { baseURL: 'https://api.x.com', params: { api_key: 'SECRET' } },
+        { fetch: fetchMock },
+      );
+
+      await client.get('/recurso', { params: { page: 1 } });
+
+      expect(seen.url).toContain('api_key=SECRET');
+      expect(seen.url).toContain('page=1');
+    });
+
+    it('el param de la petición gana sobre el del cliente con la misma clave', async () => {
+      const { seen, fetchMock } = capturingAdapter();
+      const client = new SmartFetch(
+        { baseURL: 'https://api.x.com', params: { lang: 'es', v: '1' } },
+        { fetch: fetchMock },
+      );
+
+      await client.get('/recurso', { params: { lang: 'en' } });
+
+      expect(seen.url).toContain('lang=en');
+      expect(seen.url).not.toContain('lang=es');
+      expect(seen.url).toContain('v=1');
+    });
+
+    it('usa los params del cliente cuando la petición no trae ninguno', async () => {
+      const { seen, fetchMock } = capturingAdapter();
+      const client = new SmartFetch(
+        { baseURL: 'https://api.x.com', params: { api_key: 'SECRET' } },
+        { fetch: fetchMock },
+      );
+
+      await client.get('/recurso');
+
+      expect(seen.url).toContain('api_key=SECRET');
+    });
+
+    it('permite anular un param del cliente pasándolo como null', async () => {
+      const { seen, fetchMock } = capturingAdapter();
+      const client = new SmartFetch(
+        { baseURL: 'https://api.x.com', params: { trace: 'on' } },
+        { fetch: fetchMock },
+      );
+
+      await client.get('/recurso', { params: { trace: null } });
+
+      expect(seen.url).not.toContain('trace');
+    });
+  });
+
+  describe('otros campos', () => {
+    it('reemplaza (no fusiona) el resto de campos', async () => {
+      const { seen, fetchMock } = capturingAdapter();
+      const client = new SmartFetch(
+        { baseURL: 'https://api.x.com', timeout: 1000 },
+        { fetch: fetchMock },
+      );
+
+      await client.get('/recurso', { baseURL: 'https://otra.x.com' });
+
+      expect(seen.url).toBe('https://otra.x.com/recurso');
+    });
+  });
 });
