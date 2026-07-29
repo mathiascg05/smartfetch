@@ -21,3 +21,10 @@ npm-debug.log*
 
 # Paquetes empaquetados localmente
 *.tgz
+
+# Informes de mutation testing
+reports/
+.stryker-tmp/
+
+# Documentación generada por typedoc
+docs-api/
