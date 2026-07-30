@@ -66,7 +66,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.mjs'],
+    files: ['**/*.mjs', '.size-limit.js'],
     ...tseslint.configs.disableTypeChecked,
   },
 

@@ -3,17 +3,30 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
-[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.6%20kB%20gzip-brightgreen.svg)](#pruebas)
+[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.8%20kB%20gzip-brightgreen.svg)](#pruebas)
 [![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
-Wrapper resiliente sobre la API nativa **`fetch`**, escrito en **TypeScript** y **sin dependencias
-de runtime**. Ofrece una interfaz limpia y de alto nivel (estilo `axios`) apoyándose en `fetch` por
-debajo: timeout configurable, reintentos automáticos con estrategias de espera intercambiables,
-métodos HTTP completos, interceptores y un modelo de errores tipado.
+Un wrapper de `fetch` construido alrededor de un motor de reintentos que se toma el fallo en serio.
 
-> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18** · **ESM + CJS** · async/await y Promesas
+La mayoría de clientes HTTP pequeños reintentan con una espera fija o exponencial y ahí se quedan.
+SmartFetch añade lo que decide si reintentar sirve de algo:
+
+- **Respeta `Retry-After`** en 429 y 503, en los dos formatos del RFC —segundos y fecha HTTP— con
+  tope configurable. Si el servidor dice cuándo estará listo, eso gana a cualquier estimación del
+  cliente.
+- **El jitter viene activado.** Sin él, los clientes que fallan a la vez reintentan a la vez y
+  repiten el pico que causó el fallo.
+- **`totalTimeout` acota la operación completa**, esperas de backoff incluidas — no solo cada
+  intento, así que los reintentos no convierten en silencio un presupuesto de 5 s en 40 s.
+- **Un cuerpo que no se puede reenviar se rechaza de entrada.** Reintentar un `ReadableStream` ya
+  consumido enviaría un cuerpo vacío; en su lugar la petición falla explicando por qué.
+
+Alrededor de eso: los métodos HTTP completos, interceptores, un modelo de errores tipado que
+distingue la cancelación del fallo de red, y cero dependencias de runtime.
+
+> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18** · **ESM + CJS**
 
 🇬🇧 [Read this in English](./README.md)
 

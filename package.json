@@ -68,14 +68,6 @@
     "docs": "typedoc",
     "mutation": "NODE_OPTIONS=--experimental-vm-modules stryker run"
   },
-  "size-limit": [
-    {
-      "name": "ESM entry (gzip)",
-      "path": "dist/index.js",
-      "limit": "4 KB",
-      "gzip": true
-    }
-  ],
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^9.39.5",

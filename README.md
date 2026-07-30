@@ -3,17 +3,29 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
-[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.6%20kB%20gzip-brightgreen.svg)](#testing)
+[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.8%20kB%20gzip-brightgreen.svg)](#testing)
 [![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#testing)
 [![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
 [![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
-A resilient wrapper around the native **`fetch`** API, written in **TypeScript** with **zero
-runtime dependencies**. It offers a clean, high-level interface (axios-style) built on `fetch`
-underneath: configurable timeouts, automatic retries with pluggable wait strategies, the full set
-of HTTP verbs, interceptors and a typed error model.
+A `fetch` wrapper built around a retry engine that takes failure seriously.
 
-> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18** · **ESM + CJS** · async/await and Promises
+Most small HTTP clients retry on a fixed or exponential delay and stop there. SmartFetch adds the
+parts that decide whether retrying actually helps:
+
+- **`Retry-After` is honoured** on 429 and 503, in both RFC formats — seconds and HTTP date — with a
+  configurable cap. When the server says when it will be ready, that beats any client-side guess.
+- **Jitter is on by default.** Clients that fail together otherwise retry together and repeat the
+  spike that caused the failure.
+- **`totalTimeout` bounds the whole operation**, backoff waits included — not just each attempt, so
+  retries cannot silently turn a 5 s budget into 40 s.
+- **A body that cannot be replayed is rejected up front.** Retrying a consumed `ReadableStream` would
+  send an empty body; the request fails with an explanation instead.
+
+Around that: the full set of HTTP verbs, interceptors, a typed error model that keeps cancellation
+distinct from network failure, and no runtime dependencies.
+
+> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18** · **ESM + CJS**
 
 🇪🇸 [Léeme en español](./README.es.md)
 
