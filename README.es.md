@@ -358,17 +358,17 @@ await client.get('/usuarios', { params: { page: 1 } });
 
 Cada método resuelve con un `SmartFetchResponse<T>`:
 
-| Campo        | Tipo                     | Descripción                                                                       |
-| ------------ | ------------------------ | --------------------------------------------------------------------------------- |
-| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304 y en todo `HEAD`). |
-| `status`     | `number`                 | Código de estado HTTP.                                                            |
-| `statusText` | `string`                 | Texto del estado.                                                                 |
-| `headers`    | `Record<string, string>` | Cabeceras de la respuesta.                                                        |
-| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, sin colapsar (vacío si no hay ninguna).         |
-| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                                   |
-| `url`        | `string`                 | URL final de la petición.                                                         |
-| `config`     | `RequestConfig`          | Configuración efectiva usada.                                                     |
-| `raw`        | `Response`               | El `Response` nativo sin procesar.                                                |
+| Campo        | Tipo                     | Descripción                                                                                          |
+| ------------ | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304 y en todo `HEAD`).                    |
+| `status`     | `number`                 | Código de estado HTTP.                                                                               |
+| `statusText` | `string`                 | Texto del estado.                                                                                    |
+| `headers`    | `Record<string, string>` | Cabeceras de la respuesta. **No incluye `set-cookie`** — ver `setCookie`.                            |
+| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, en orden (vacío si no hay ninguna). El único sitio donde aparecen. |
+| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                                                      |
+| `url`        | `string`                 | URL final de la petición.                                                                            |
+| `config`     | `RequestConfig`          | Configuración efectiva usada.                                                                        |
+| `raw`        | `Response`               | El `Response` nativo sin procesar.                                                                   |
 
 Los fallos se normalizan a una jerarquía de errores tipada. Todos extienden `SmartFetchError`,
 que expone el discriminador `type` y guards para estrechar el tipo:

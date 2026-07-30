@@ -711,7 +711,13 @@ export class SmartFetch {
 
     const headers: Record<string, string> = {};
     raw.headers.forEach((value, key) => {
-      headers[key] = value;
+      // `set-cookie` is deliberately left out: a flat record cannot represent a
+      // header sent more than once, and folding it would quietly hand back only
+      // the last cookie. An absent key is better than one that lies — the full
+      // list lives in `setCookie`.
+      if (key.toLowerCase() !== 'set-cookie') {
+        headers[key] = value;
+      }
     });
 
     return {

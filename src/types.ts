@@ -215,10 +215,9 @@ export interface SmartFetchResponse<T = unknown> {
   /**
    * Response headers as key/value pairs.
    *
-   * A flat record cannot represent a header sent more than once, so any repeated
-   * header collapses to its last value here. In practice `Set-Cookie` is the only
-   * header that matters for this, and it is exposed intact in
-   * {@link SmartFetchResponse.setCookie}.
+   * **`set-cookie` is not included here.** A flat record cannot represent a header
+   * sent more than once, so including it would hand back only the last cookie
+   * without saying so. The complete list is in {@link SmartFetchResponse.setCookie}.
    */
   headers: Record<string, string>;
 
