@@ -25,7 +25,7 @@ parts that decide whether retrying actually helps:
 Around that: the full set of HTTP verbs, interceptors, a typed error model that keeps cancellation
 distinct from network failure, and no runtime dependencies.
 
-> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18** · **ESM + CJS**
+> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18, Chromium and edge runtimes** · **ESM + CJS**
 
 🇪🇸 [Léeme en español](./README.es.md)
 
@@ -433,8 +433,6 @@ before adopting it:
 - **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
   multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
   in `response.setCookie`.
-- **Tested on Node ≥ 18 only.** The code is runtime-agnostic and should work in browsers and edge
-  runtimes, but no browser test suite backs that claim.
 
 For production workloads needing any of the above, [axios](https://github.com/axios/axios),
 [ky](https://github.com/sindresorhus/ky) or [ofetch](https://github.com/unjs/ofetch) are more
@@ -446,13 +444,28 @@ complete choices.
 npm install
 npm run lint          # ESLint + Prettier rules
 npm run typecheck     # tsc --noEmit
-npm run test          # Jest (ESM)
+npm run test          # Jest (ESM) — unit + integration on Node
 npm run test:coverage # enforces a 100% threshold
+npm run test:edge     # the same library inside an edge sandbox
+npm run test:browser  # Chromium headless via Playwright
+npm run mutation      # StrykerJS
 npm run build         # dist/ (ESM + CJS + types)
 npm run check:pack    # publint + arethetypeswrong
 npm run size          # enforces the bundle budget
 npm run example       # end-to-end smoke test against a real API
 ```
+
+### Where the tests actually run
+
+| Runtime       | Suite                    | What it exercises                                       |
+| ------------- | ------------------------ | ------------------------------------------------------- |
+| **Node ≥ 18** | Jest, unit + integration | Everything, against a real `node:http` server           |
+| **Chromium**  | Vitest + Playwright      | Real browser `fetch` against endpoints served by Vitest |
+| **Edge**      | Jest + `@edge-runtime`   | The library inside a Workers/Vercel-Edge sandbox        |
+
+The integration and browser suites hit real HTTP rather than mocked adapters. That distinction
+matters: nine behaviour bugs once survived 100% line coverage precisely because every test went
+through a hand-made `Response`.
 
 The suite is 117 tests across 9 files and covers 100% of statements, branches, functions and lines.
 That threshold is enforced by `jest.config.mjs`, so an uncovered branch fails CI rather than

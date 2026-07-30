@@ -52,3 +52,46 @@ jobs:
       # Fails if the ESM entry grows past the budget declared in package.json.
       - name: Check bundle size
         run: npm run size
+
+  edge:
+    name: Edge runtime
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Corre la librería dentro del sandbox de @edge-runtime, con las globales
+      # de Cloudflare Workers / Vercel Edge en vez de las de Node.
+      - name: Test on edge runtime
+        run: npm run test:edge
+
+  browser:
+    name: Browser (Chromium)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Chromium headless contra endpoints reales servidos por Vitest: usa el
+      # fetch del navegador, no un adaptador simulado.
+      - name: Test in browser
+        run: npm run test:browser

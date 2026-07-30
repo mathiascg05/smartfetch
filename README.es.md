@@ -26,7 +26,7 @@ SmartFetch añade lo que decide si reintentar sirve de algo:
 Alrededor de eso: los métodos HTTP completos, interceptores, un modelo de errores tipado que
 distingue la cancelación del fallo de red, y cero dependencias de runtime.
 
-> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18** · **ESM + CJS**
+> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18, Chromium y edge** · **ESM + CJS**
 
 🇬🇧 [Read this in English](./README.md)
 
@@ -434,8 +434,6 @@ adoptarlo:
 - **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
   cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
   conservan en `response.setCookie`.
-- **Probado solo en Node ≥ 18.** El código es agnóstico al runtime y debería funcionar en
-  navegadores y edge runtimes, pero no hay una suite de pruebas de navegador que lo respalde.
 
 Para cargas de producción que necesiten cualquiera de esas cosas, [axios](https://github.com/axios/axios),
 [ky](https://github.com/sindresorhus/ky) u [ofetch](https://github.com/unjs/ofetch) son opciones
@@ -447,13 +445,28 @@ más completas.
 npm install
 npm run lint          # reglas de ESLint + Prettier
 npm run typecheck     # tsc --noEmit
-npm run test          # Jest (ESM)
+npm run test          # Jest (ESM) — unitarias + integración en Node
 npm run test:coverage # exige el umbral del 100%
+npm run test:edge     # la misma librería dentro de un sandbox edge
+npm run test:browser  # Chromium headless vía Playwright
+npm run mutation      # StrykerJS
 npm run build         # dist/ (ESM + CJS + tipos)
 npm run check:pack    # publint + arethetypeswrong
 npm run size          # impone el presupuesto de tamaño
 npm run example       # prueba de humo end-to-end contra una API real
 ```
+
+### Dónde se ejecutan realmente las pruebas
+
+| Runtime       | Suite                         | Qué ejercita                                                       |
+| ------------- | ----------------------------- | ------------------------------------------------------------------ |
+| **Node ≥ 18** | Jest, unitarias + integración | Todo, contra un servidor `node:http` real                          |
+| **Chromium**  | Vitest + Playwright           | El `fetch` real del navegador contra endpoints servidos por Vitest |
+| **Edge**      | Jest + `@edge-runtime`        | La librería dentro de un sandbox de Workers/Vercel Edge            |
+
+Las suites de integración y de navegador golpean HTTP real, no adaptadores simulados. La distinción
+importa: nueve bugs de comportamiento sobrevivieron una vez a un 100% de cobertura de líneas
+precisamente porque todas las pruebas pasaban por un `Response` fabricado a mano.
 
 La suite son 117 pruebas repartidas en 9 archivos y cubre el 100% de sentencias, ramas, funciones y
 líneas. Ese umbral lo impone `jest.config.mjs`, de modo que una rama sin cubrir rompe CI en lugar de
