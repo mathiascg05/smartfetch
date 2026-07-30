@@ -3,17 +3,29 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
-[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.6%20kB%20gzip-brightgreen.svg)](#testing)
-[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#testing)
+[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.8%20kB%20gzip-brightgreen.svg)](#testing)
+[![mutation score](https://img.shields.io/badge/mutation%20score-88%25-green.svg)](#testing)
 [![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
 [![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
-A resilient wrapper around the native **`fetch`** API, written in **TypeScript** with **zero
-runtime dependencies**. It offers a clean, high-level interface (axios-style) built on `fetch`
-underneath: configurable timeouts, automatic retries with pluggable wait strategies, the full set
-of HTTP verbs, interceptors and a typed error model.
+A `fetch` wrapper built around a retry engine that takes failure seriously.
 
-> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18** · **ESM + CJS** · async/await and Promises
+Most small HTTP clients retry on a fixed or exponential delay and stop there. SmartFetch adds the
+parts that decide whether retrying actually helps:
+
+- **`Retry-After` is honoured** on 429 and 503, in both RFC formats — seconds and HTTP date — with a
+  configurable cap. When the server says when it will be ready, that beats any client-side guess.
+- **Jitter is on by default.** Clients that fail together otherwise retry together and repeat the
+  spike that caused the failure.
+- **`totalTimeout` bounds the whole operation**, backoff waits included — not just each attempt, so
+  retries cannot silently turn a 5 s budget into 40 s.
+- **A body that cannot be replayed is rejected up front.** Retrying a consumed `ReadableStream` would
+  send an empty body; the request fails with an explanation instead.
+
+Around that: the full set of HTTP verbs, interceptors, a typed error model that keeps cancellation
+distinct from network failure, and no runtime dependencies.
+
+> **TypeScript** · **Zero runtime dependencies** · **Node ≥ 18, Chromium and edge runtimes** · **ESM + CJS**
 
 🇪🇸 [Léeme en español](./README.es.md)
 
@@ -281,7 +293,7 @@ and/or per request; request values are merged over the client ones.
 | ----------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `baseURL`         | `string`                      | Base URL that relative paths resolve against.                                                                   |
 | `url`             | `string`                      | Request path or URL (normally the 1st argument of each method).                                                 |
-| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                         |
 | `headers`         | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below).                                   |
 | `params`          | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below). |
 | `body`            | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                   |
@@ -294,9 +306,30 @@ and/or per request; request values are merged over the client ones.
 | `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                            |
 | `validateStatus`  | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                                                              |
 | `signal`          | `AbortSignal`                 | External signal for cancelling the request.                                                                     |
+| `credentials`     | `RequestCredentials`          | Whether the browser sends cookies/auth. **`'include'` enables cookie auth in the browser.**                     |
+| `mode`            | `RequestMode`                 | Cross-origin mode (`cors`, `no-cors`, `same-origin`, ...).                                                      |
+| `cache`           | `RequestCache`                | HTTP cache interaction (`no-store`, `reload`, ...).                                                             |
+| `redirect`        | `RequestRedirect`             | Redirect handling (`follow`, `error`, `manual`).                                                                |
+| `keepalive`       | `boolean`                     | Lets the request outlive the page that started it.                                                              |
+| `referrerPolicy`  | `ReferrerPolicy`              | Referrer policy applied to the request.                                                                         |
+| `integrity`       | `string`                      | Subresource-integrity metadata checked against the response.                                                    |
 
 The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Cookies in the browser
+
+Cookie-based authentication needs `credentials`, which is pure passthrough to `fetch`:
+
+```ts
+const api = new SmartFetch({
+  baseURL: 'https://api.example.com',
+  credentials: 'include', // send cookies, including cross-origin
+});
+```
+
+Every `RequestInit` option above is forwarded **only when you set it**. Leave one out and `fetch`
+decides, exactly as if SmartFetch were not there.
 
 ### Merge rules
 
@@ -336,17 +369,17 @@ await client.get('/users', { params: { page: 1 } });
 
 Every method resolves with a `SmartFetchResponse<T>`:
 
-| Field        | Type                     | Description                                                         |
-| ------------ | ------------------------ | ------------------------------------------------------------------- |
-| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304).    |
-| `status`     | `number`                 | HTTP status code.                                                   |
-| `statusText` | `string`                 | Status text.                                                        |
-| `headers`    | `Record<string, string>` | Response headers.                                                   |
-| `setCookie`  | `string[]`               | Every `Set-Cookie` header, uncollapsed (empty when there are none). |
-| `ok`         | `boolean`                | `true` when the status counted as successful.                       |
-| `url`        | `string`                 | Final request URL.                                                  |
-| `config`     | `RequestConfig`          | Effective configuration used.                                       |
-| `raw`        | `Response`               | The untouched native `Response`.                                    |
+| Field        | Type                     | Description                                                                                  |
+| ------------ | ------------------------ | -------------------------------------------------------------------------------------------- |
+| `data`       | `T`                      | Body parsed according to `responseType` (`null` on 204/205/304 and on every `HEAD`).         |
+| `status`     | `number`                 | HTTP status code.                                                                            |
+| `statusText` | `string`                 | Status text.                                                                                 |
+| `headers`    | `Record<string, string>` | Response headers. **`set-cookie` is not included** — see `setCookie`.                        |
+| `setCookie`  | `string[]`               | Every `Set-Cookie` header, in order (empty when there are none). The only place they appear. |
+| `ok`         | `boolean`                | `true` when the status counted as successful.                                                |
+| `url`        | `string`                 | Final request URL.                                                                           |
+| `config`     | `RequestConfig`          | Effective configuration used.                                                                |
+| `raw`        | `Response`               | The untouched native `Response`.                                                             |
 
 Failures are normalized into a typed error hierarchy. Everything extends `SmartFetchError`, which
 exposes the `type` discriminator plus guards for narrowing:
@@ -392,23 +425,16 @@ any).
 - **Singleton** — the exported default instance (`import smartfetch from '@mathiascg05/smartfetch'`).
 - **Interceptors (AOP)** — request/response hooks for cross-cutting concerns.
 
-## Limitations and non-goals
+## Limitations
 
-SmartFetch is deliberately small. These are the things it does **not** do today — worth knowing
-before adopting it:
+One known gap, stated plainly:
 
-- **No `RequestInit` passthrough for `credentials` / `mode` / `cache` / `redirect` / `keepalive`.**
-  In practice this means **cookie-based authentication in the browser is not supported**.
-- **No `HEAD` or `OPTIONS`** — only `GET`, `POST`, `PUT`, `PATCH` and `DELETE`.
-- **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
-  multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
-  in `response.setCookie`.
-- **Tested on Node ≥ 18 only.** The code is runtime-agnostic and should work in browsers and edge
-  runtimes, but no browser test suite backs that claim.
+- **Request headers are `Record<string, string>`.** You cannot pass a `Headers` instance, and you
+  cannot send the same request header twice. Response headers are unaffected: repeated `Set-Cookie`
+  values are preserved in `response.setCookie`.
 
-For production workloads needing any of the above, [axios](https://github.com/axios/axios),
-[ky](https://github.com/sindresorhus/ky) or [ofetch](https://github.com/unjs/ofetch) are more
-complete choices.
+Everything else the library claims, it tests — including running in Node, Chromium and edge
+runtimes.
 
 ## Testing
 
@@ -416,13 +442,28 @@ complete choices.
 npm install
 npm run lint          # ESLint + Prettier rules
 npm run typecheck     # tsc --noEmit
-npm run test          # Jest (ESM)
+npm run test          # Jest (ESM) — unit + integration on Node
 npm run test:coverage # enforces a 100% threshold
+npm run test:edge     # the same library inside an edge sandbox
+npm run test:browser  # Chromium headless via Playwright
+npm run mutation      # StrykerJS
 npm run build         # dist/ (ESM + CJS + types)
 npm run check:pack    # publint + arethetypeswrong
 npm run size          # enforces the bundle budget
 npm run example       # end-to-end smoke test against a real API
 ```
+
+### Where the tests actually run
+
+| Runtime       | Suite                    | What it exercises                                       |
+| ------------- | ------------------------ | ------------------------------------------------------- |
+| **Node ≥ 18** | Jest, unit + integration | Everything, against a real `node:http` server           |
+| **Chromium**  | Vitest + Playwright      | Real browser `fetch` against endpoints served by Vitest |
+| **Edge**      | Jest + `@edge-runtime`   | The library inside a Workers/Vercel-Edge sandbox        |
+
+The integration and browser suites hit real HTTP rather than mocked adapters. That distinction
+matters: nine behaviour bugs once survived 100% line coverage precisely because every test went
+through a hand-made `Response`.
 
 The suite is 117 tests across 9 files and covers 100% of statements, branches, functions and lines.
 That threshold is enforced by `jest.config.mjs`, so an uncovered branch fails CI rather than

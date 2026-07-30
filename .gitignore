@@ -28,3 +28,6 @@ reports/
 
 # Documentación generada por typedoc
 docs-api/
+
+# Resultados de Playwright/Vitest browser
+test-results/

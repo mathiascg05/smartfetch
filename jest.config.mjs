@@ -9,6 +9,8 @@ export default {
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   roots: ['<rootDir>/src', '<rootDir>/tests'],
+  // tests/edge corre con otro testEnvironment, desde jest.edge.config.mjs.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/edge/', '<rootDir>/tests/browser/'],
   testMatch: ['**/*.spec.ts', '**/*.test.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',

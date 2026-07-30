@@ -1,6 +1,10 @@
 import { jest } from '@jest/globals';
 import { SmartFetch } from '../src/client.js';
 import { CancelledError, HttpError, NetworkError } from '../src/errors.js';
+import { buildURL } from '../src/url.js';
+import { parseRetryAfter } from '../src/retry/retry-after.js';
+import { defaultShouldRetry, withRetry } from '../src/retry/retry.js';
+import { InterceptorManager } from '../src/interceptors.js';
 import type { FetchAdapter } from '../src/types.js';
 
 /**
@@ -169,6 +173,111 @@ describe('huecos detectados por mutation testing', () => {
       const error = await client.get('https://api.x.com/x').catch((e: unknown) => e);
 
       expect((error as NetworkError).message).toMatch(/network/i);
+    });
+  });
+});
+
+/**
+ * Segunda ronda de huecos detectados por mutation testing, tras añadir HEAD,
+ * OPTIONS, el passthrough de RequestInit y el centinela de totalTimeout.
+ */
+describe('huecos detectados por mutation testing (ronda 2)', () => {
+  describe('buildURL: los regex necesitan sus anclas', () => {
+    // Mutante: `/^https?:\/\//i` -> `/https?:\/\//i`. Sin el ancla, una ruta
+    // relativa que contenga "http://" en cualquier posición se trataría como
+    // absoluta y la baseURL se perdería en silencio.
+    it('una ruta relativa que contiene http:// sigue siendo relativa', () => {
+      const url = buildURL({
+        baseURL: 'https://api.x.com',
+        url: '/redirect?to=http://otro.com',
+      });
+
+      expect(url.startsWith('https://api.x.com/redirect')).toBe(true);
+    });
+
+    // Mutante: `/^https?:\/\//i` -> `/^https:\/\//i`.
+    it('una URL absoluta http:// se respeta igual que https://', () => {
+      expect(buildURL({ baseURL: 'https://api.x.com', url: 'http://otro.com/x' })).toBe(
+        'http://otro.com/x',
+      );
+    });
+
+    // Mutantes: `/\/+$/` -> `/\/$/` y `/^\/+/` -> `/^\//`.
+    it('normaliza barras repetidas al unir baseURL y ruta', () => {
+      expect(buildURL({ baseURL: 'https://api.x.com//', url: '/p' })).toBe('https://api.x.com/p');
+      expect(buildURL({ baseURL: 'https://api.x.com', url: '///p' })).toBe('https://api.x.com/p');
+    });
+
+    // Mutantes: `hashIndex >= 0` y `queryIndex >= 0` -> `> 0`. Se rompen cuando el
+    // carácter aparece en la posición 0.
+    it('trata un fragmento en la posición 0', () => {
+      expect(buildURL({ url: '#frag', params: { a: 1 } })).toBe('?a=1#frag');
+    });
+
+    it('trata una query en la posición 0', () => {
+      expect(buildURL({ url: '?x=1', params: { a: 2 } })).toBe('?x=1&a=2');
+    });
+  });
+
+  describe('parseRetryAfter: el formato en segundos está anclado por ambos lados', () => {
+    // Mutante: `/^\d+$/` -> `/^\d+/`. Sin el ancla final, "12abc" se leería como
+    // 12 segundos en vez de rechazarse.
+    it('rechaza un valor que empieza por dígitos pero no lo es entero', () => {
+      expect(parseRetryAfter('12abc')).toBeNull();
+      expect(parseRetryAfter('3.5')).toBeNull();
+    });
+
+    // Mutantes sobre `value.trim()` y sobre la comprobación de cadena vacía.
+    it('ignora los espacios alrededor del valor', () => {
+      expect(parseRetryAfter('  120  ')).toBe(120_000);
+    });
+
+    it('trata una cadena de solo espacios como ilegible', () => {
+      expect(parseRetryAfter('   ')).toBeNull();
+    });
+  });
+
+  describe('withRetry: bordes del motor', () => {
+    // Mutante: `error.status <= 599` -> `< 599`.
+    it('reintenta un 599, el último código del rango 5xx', () => {
+      expect(defaultShouldRetry(new HttpError(599, 'Network Connect Timeout'))).toBe(true);
+      expect(defaultShouldRetry(new HttpError(600, 'Fuera de rango'))).toBe(false);
+    });
+
+    // Mutante: quitar el encadenamiento opcional de `error.response?.headers`.
+    // Un HttpError sin `response` haría estallar el motor en vez de caer al backoff.
+    it('tolera un HttpError 429 que no trae respuesta adjunta', async () => {
+      const operation = jest.fn(async () => {
+        throw new HttpError(429, 'Too Many Requests');
+      });
+
+      await expect(
+        withRetry(operation, { retries: 1, shouldRetry: () => true }),
+      ).rejects.toBeInstanceOf(HttpError);
+      expect(operation).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('InterceptorManager arranca vacío', () => {
+    // Mutante: `handlers = []` -> `["Stryker was here"]`.
+    it('un gestor recién creado no recorre ningún interceptor', () => {
+      const manager = new InterceptorManager<{ x: number }>();
+      const visto = jest.fn();
+
+      manager.forEach(visto);
+
+      expect(visto).not.toHaveBeenCalled();
+    });
+
+    it('clear() lo devuelve al estado vacío', () => {
+      const manager = new InterceptorManager<{ x: number }>();
+      manager.use((v) => v);
+      manager.clear();
+      const visto = jest.fn();
+
+      manager.forEach(visto);
+
+      expect(visto).not.toHaveBeenCalled();
     });
   });
 });

@@ -13,8 +13,11 @@ import type { BackoffStrategy } from './retry/backoff.js';
 
 /**
  * HTTP methods supported by the client.
+ *
+ * `HEAD` and `OPTIONS` never carry a request body. `HEAD` additionally never
+ * carries a *response* body — see {@link SmartFetchResponse.data}.
  */
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
 /**
  * Format the response body should be read as.
@@ -164,6 +167,34 @@ export interface RequestConfig {
    * of the `timeout` control.
    */
   signal?: AbortSignal;
+
+  /**
+   * Whether the browser sends credentials (cookies, HTTP auth, TLS certificates)
+   * with the request.
+   *
+   * **`'include'` is what enables cookie-based authentication in the browser**,
+   * including cross-origin requests. Left unset, `fetch` decides — `'same-origin'`
+   * in browsers.
+   */
+  credentials?: RequestCredentials;
+
+  /** Cross-origin mode of the request (`'cors'`, `'no-cors'`, `'same-origin'`, ...). */
+  mode?: RequestMode;
+
+  /** How the request interacts with the HTTP cache (`'no-store'`, `'reload'`, ...). */
+  cache?: RequestCache;
+
+  /** How redirects are handled (`'follow'`, `'error'`, `'manual'`). */
+  redirect?: RequestRedirect;
+
+  /** Allows the request to outlive the page that started it (`navigator.sendBeacon` style). */
+  keepalive?: boolean;
+
+  /** Referrer policy applied to the request. */
+  referrerPolicy?: ReferrerPolicy;
+
+  /** Subresource-integrity metadata (`"sha384-..."`) checked against the response. */
+  integrity?: string;
 }
 
 /**
@@ -184,10 +215,9 @@ export interface SmartFetchResponse<T = unknown> {
   /**
    * Response headers as key/value pairs.
    *
-   * A flat record cannot represent a header sent more than once, so any repeated
-   * header collapses to its last value here. In practice `Set-Cookie` is the only
-   * header that matters for this, and it is exposed intact in
-   * {@link SmartFetchResponse.setCookie}.
+   * **`set-cookie` is not included here.** A flat record cannot represent a header
+   * sent more than once, so including it would hand back only the last cookie
+   * without saying so. The complete list is in {@link SmartFetchResponse.setCookie}.
    */
   headers: Record<string, string>;
 

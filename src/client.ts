@@ -24,6 +24,7 @@ import {
 import type {
   FetchAdapter,
   HeadersInit,
+  HttpMethod,
   RequestConfig,
   ResponseType,
   SmartFetchOptions,
@@ -97,6 +98,35 @@ function readSetCookie(headers: Headers): string[] {
   const single = headers.get('set-cookie');
   return single === null ? [] : [single];
 }
+
+/**
+ * Native `RequestInit` options forwarded verbatim when the caller sets them.
+ *
+ * They are pure passthrough: SmartFetch neither interprets nor defaults them, so
+ * a request without them behaves exactly like plain `fetch`.
+ */
+const PASSTHROUGH_OPTIONS = [
+  'credentials',
+  'mode',
+  'cache',
+  'redirect',
+  'keepalive',
+  'referrerPolicy',
+  'integrity',
+] as const satisfies readonly (keyof RequestConfig & keyof RequestInit)[];
+
+/**
+ * Methods that never carry a request body.
+ *
+ * `GET` and `HEAD` are body-less by specification; `OPTIONS` may technically carry
+ * one, but doing so is so rarely supported by servers that sending it silently
+ * would surprise more than it helps.
+ */
+const BODYLESS_REQUEST_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>([
+  'GET',
+  'HEAD',
+  'OPTIONS',
+]);
 
 /** Looks up a header by name, case-insensitively. */
 function hasHeader(headers: HeadersInit, name: string): boolean {
@@ -354,7 +384,24 @@ export class SmartFetch {
     // at any point — mid-attempt or mid-backoff — rather than only bounding each
     // attempt the way `timeout` does.
     const controller = new AbortController();
-    let expired = false;
+
+    // The deadline aborts with a sentinel of its own instead of setting a flag. A
+    // flag only says "the timer fired", not "the timer caused this error", so a
+    // real failure arriving after the deadline got relabelled as a timeout with the
+    // genuine error buried in `cause`.
+    //
+    // Ownership is then read off our own controller — `signal.reason` is whatever
+    // aborted it first — rather than off the error's `cause`. That keeps the check
+    // independent of the adapter: a custom `fetch` that rejects with an AbortError
+    // of its own making, instead of propagating `signal.reason` the way the spec
+    // requires, would break a cause-based check.
+    //
+    // The sentinel is still named `AbortError` so that a spec-compliant adapter
+    // rejecting with it lands in `isAbortError` as a cancellation, not a transport
+    // failure.
+    const deadlineReason = Object.assign(new Error(`totalTimeout of ${totalTimeout} ms elapsed`), {
+      name: 'AbortError',
+    });
 
     const onExternalAbort = () => controller.abort(effective.signal?.reason);
     if (effective.signal) {
@@ -365,18 +412,19 @@ export class SmartFetch {
       }
     }
 
-    const timer = setTimeout(() => {
-      expired = true;
-      controller.abort();
-    }, totalTimeout);
+    const timer = setTimeout(() => controller.abort(deadlineReason), totalTimeout);
 
     // The composed signal replaces the original for the whole run, so both the
     // per-attempt timeout and the backoff waits honour the global deadline.
     return this.runAttempts<T>({ ...effective, signal: controller.signal }, retries)
       .catch((error: unknown) => {
-        // Only our own timer turns the abort into a TimeoutError; an external
-        // cancellation stays a CancelledError.
-        if (expired) {
+        // Only a cancellation this deadline actually caused becomes a
+        // TimeoutError. Anything else — an HTTP error, a transport failure, an
+        // external cancellation — propagates untouched.
+        // Both halves matter: the deadline must have been what aborted the
+        // controller, *and* the error must be a cancellation. A 404 that arrives
+        // after the deadline satisfies the first but not the second.
+        if (controller.signal.reason === deadlineReason && error instanceof CancelledError) {
           throw new TimeoutError(totalTimeout, { config: effective, cause: error });
         }
         throw error;
@@ -588,6 +636,33 @@ export class SmartFetch {
     return this.request<T>({ ...config, method: 'DELETE', url });
   }
 
+  /**
+   * Performs a `HEAD` request.
+   *
+   * A `HEAD` response carries headers but never a body, so `data` is always
+   * `null` regardless of {@link RequestConfig.responseType}.
+   *
+   * @param url - Path or URL of the resource.
+   * @param config - Extra request configuration.
+   */
+  head(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<null>> {
+    return this.request<null>({ ...config, method: 'HEAD', url });
+  }
+
+  /**
+   * Performs an `OPTIONS` request.
+   *
+   * Unlike `HEAD`, an `OPTIONS` response may carry a body, so it is parsed like
+   * any other. The request itself never carries one.
+   *
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param config - Extra request configuration.
+   */
+  options<T = unknown>(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<T>> {
+    return this.request<T>({ ...config, method: 'OPTIONS', url });
+  }
+
   /** Builds the native options (`RequestInit`) from the effective configuration. */
   private buildRequestInit(config: RequestConfig): RequestInit {
     const headers: HeadersInit = { ...config.headers };
@@ -599,7 +674,20 @@ export class SmartFetch {
     // The signal (timeout + external signal combined) is injected by withTimeout
     // when the request runs; `init.signal` is deliberately left untouched here.
 
-    if (config.body !== undefined && config.method !== 'GET') {
+    // Native RequestInit options are forwarded only when the caller set them.
+    // Copying them unconditionally would pin defaults of our own on top of the
+    // ones `fetch` already defines, changing behaviour nobody asked us to change.
+    for (const option of PASSTHROUGH_OPTIONS) {
+      const value = config[option];
+      if (value !== undefined) {
+        Object.assign(init, { [option]: value });
+      }
+    }
+
+    // GET, HEAD and OPTIONS never carry a request body. `mergeConfig` always sets
+    // `method`, so no fallback is needed here; a `Set.has(undefined)` would be
+    // `false` anyway, matching the previous behaviour.
+    if (config.body !== undefined && !BODYLESS_REQUEST_METHODS.has(config.method as HttpMethod)) {
       if (isPlainObject(config.body)) {
         init.body = JSON.stringify(config.body);
         if (!hasHeader(headers, 'content-type')) {
@@ -623,7 +711,13 @@ export class SmartFetch {
 
     const headers: Record<string, string> = {};
     raw.headers.forEach((value, key) => {
-      headers[key] = value;
+      // `set-cookie` is deliberately left out: a flat record cannot represent a
+      // header sent more than once, and folding it would quietly hand back only
+      // the last cookie. An absent key is better than one that lies — the full
+      // list lives in `setCookie`.
+      if (key.toLowerCase() !== 'set-cookie') {
+        headers[key] = value;
+      }
     });
 
     return {
@@ -664,7 +758,12 @@ export class SmartFetch {
     responseType: ResponseType,
     config: RequestConfig,
   ): Promise<unknown> {
-    if (SmartFetch.NULL_BODY_STATUSES.has(raw.status)) {
+    // A HEAD response carries headers but no body, whatever its status says. This
+    // has to key off the method, not the status: a HEAD answering 200 with a
+    // Content-Length would otherwise take the normal path — which happens to work
+    // for JSON (an empty text parses to null) but would yield an empty Blob for
+    // `blob` and a ParseError for `formData`.
+    if (config.method === 'HEAD' || SmartFetch.NULL_BODY_STATUSES.has(raw.status)) {
       return null;
     }
 
