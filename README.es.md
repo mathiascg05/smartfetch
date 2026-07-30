@@ -42,7 +42,7 @@ distingue la cancelación del fallo de red, y cero dependencias de runtime.
 - [Referencia de configuración](#referencia-de-configuración)
 - [Respuesta y errores](#respuesta-y-errores)
 - [Patrones de diseño](#patrones-de-diseño)
-- [Limitaciones](#limitaciones)
+- [Decisiones de diseño](#decisiones-de-diseño)
 - [Pruebas](#pruebas)
 - [Origen](#origen)
 - [Licencia](#licencia)
@@ -284,35 +284,47 @@ client.interceptors.request.eject(authId);
 Los interceptores de petición se ejecutan en orden inverso al de registro (LIFO) y los de respuesta
 en orden de registro (FIFO), igual que en `axios`.
 
+Si la configuración puede traer cabeceras multi-valor, construye un `Headers` en lugar de hacer
+spread — funciona con las tres formas:
+
+```ts
+client.interceptors.request.use((config) => {
+  const headers = new Headers(config.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  config.headers = headers;
+  return config;
+});
+```
+
 ## Referencia de configuración
 
 `RequestConfig` (todos los campos son opcionales). Se puede pasar como configuración por defecto
 del cliente y/o por petición; los valores de la petición se fusionan sobre los del cliente.
 
-| Opción            | Tipo                          | Descripción                                                                                                          |
-| ----------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `baseURL`         | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                  |
-| `url`             | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                            |
-| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                              |
-| `headers`         | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
-| `params`          | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
-| `body`            | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
-| `timeout`         | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite). Acota un único intento.                                    |
-| `totalTimeout`    | `number`                      | Milisegundos para la operación completa, esperas de backoff incluidas (`0`/omitido = sin límite global).             |
-| `retries`         | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento). Incompatible con un cuerpo de tipo stream — ver abajo. |
-| `backoff`         | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                    |
-| `retryOn`         | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                       |
-| `maxRetryAfterMs` | `number`                      | Tope para la espera que pida el servidor vía `Retry-After` (default `60000`).                                        |
-| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                 |
-| `validateStatus`  | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                         |
-| `signal`          | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                             |
-| `credentials`     | `RequestCredentials`          | Si el navegador envía cookies/credenciales. **`'include'` habilita la auth por cookie en navegador.**                |
-| `mode`            | `RequestMode`                 | Modo de origen cruzado (`cors`, `no-cors`, `same-origin`, ...).                                                      |
-| `cache`           | `RequestCache`                | Interacción con la caché HTTP (`no-store`, `reload`, ...).                                                           |
-| `redirect`        | `RequestRedirect`             | Tratamiento de las redirecciones (`follow`, `error`, `manual`).                                                      |
-| `keepalive`       | `boolean`                     | Permite que la petición sobreviva a la página que la inició.                                                         |
-| `referrerPolicy`  | `ReferrerPolicy`              | Política de referrer aplicada a la petición.                                                                         |
-| `integrity`       | `string`                      | Metadatos de subresource-integrity verificados contra la respuesta.                                                  |
+| Opción            | Tipo                          | Descripción                                                                                                                       |
+| ----------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `baseURL`         | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                               |
+| `url`             | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                                         |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                                           |
+| `headers`         | `HeadersInit`                 | Cabeceras HTTP: un `Headers`, un array de pares `[nombre, valor]` o un record. Se fusionan sin distinguir mayúsculas (ver abajo). |
+| `params`          | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).                |
+| `body`            | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                                            |
+| `timeout`         | `number`                      | Milisegundos antes de abortar (`0`/omitido = sin límite). Acota un único intento.                                                 |
+| `totalTimeout`    | `number`                      | Milisegundos para la operación completa, esperas de backoff incluidas (`0`/omitido = sin límite global).                          |
+| `retries`         | `number`                      | Reintentos ante fallo transitorio (default `0` = un intento). Incompatible con un cuerpo de tipo stream — ver abajo.              |
+| `backoff`         | `BackoffStrategy`             | Estrategia de espera entre reintentos (Strategy).                                                                                 |
+| `retryOn`         | `RetryPredicate`              | Predicado `(error, attempt) => boolean` que sustituye la política por defecto.                                                    |
+| `maxRetryAfterMs` | `number`                      | Tope para la espera que pida el servidor vía `Retry-After` (default `60000`).                                                     |
+| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                              |
+| `validateStatus`  | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                                      |
+| `signal`          | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                                          |
+| `credentials`     | `RequestCredentials`          | Si el navegador envía cookies/credenciales. **`'include'` habilita la auth por cookie en navegador.**                             |
+| `mode`            | `RequestMode`                 | Modo de origen cruzado (`cors`, `no-cors`, `same-origin`, ...).                                                                   |
+| `cache`           | `RequestCache`                | Interacción con la caché HTTP (`no-store`, `reload`, ...).                                                                        |
+| `redirect`        | `RequestRedirect`             | Tratamiento de las redirecciones (`follow`, `error`, `manual`).                                                                   |
+| `keepalive`       | `boolean`                     | Permite que la petición sobreviva a la página que la inició.                                                                      |
+| `referrerPolicy`  | `ReferrerPolicy`              | Política de referrer aplicada a la petición.                                                                                      |
+| `integrity`       | `string`                      | Metadatos de subresource-integrity verificados contra la respuesta.                                                               |
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
@@ -342,6 +354,11 @@ La configuración por defecto del cliente y la de cada petición se combinan cam
   un id de tenant) sobrevive a una petición que traiga los suyos. Si la clave coincide gana la
   petición; pasar `null` o `undefined` elimina el parámetro, que es la forma de renunciar a un
   valor por defecto.
+- **Cabeceras multi-valor**: un nombre que aporta la petición **reemplaza todos los valores que el
+  cliente tuviera para ese nombre**, no se acumulan. Los repetidos _dentro_ de un mismo lado sí se
+  conservan, que es la forma de enviar la misma cabecera dos veces. Ojo: `fetch` une los valores del
+  mismo nombre en una sola línea separada por comas antes de enviarlos, que es la forma equivalente
+  del RFC; no se pierde nada.
 - El resto de campos se **reemplazan** por el valor de la petición cuando está presente.
 
 ### Reintentos y cuerpo de la petición
@@ -426,15 +443,39 @@ Todos comparten además `config` (la petición que falló) y `cause` (el error o
 - **Singleton** — instancia por defecto exportada (`import smartfetch from '@mathiascg05/smartfetch'`).
 - **Interceptores (AOP)** — hooks de petición/respuesta para preocupaciones transversales.
 
-## Limitaciones
+## Decisiones de diseño
 
-Un hueco conocido, dicho sin rodeos:
+Por qué la librería se comporta como se comporta. Cada uno de estos puntos fue una elección con una
+alternativa más barata.
 
-- **Las cabeceras de petición son `Record<string, string>`.** No se puede pasar una instancia de
-  `Headers` ni enviar dos veces la misma cabecera. Las de respuesta no se ven afectadas: los valores
-  repetidos de `Set-Cookie` se conservan en `response.setCookie`.
+**Los reintentos vienen desactivados.** Una librería que reintenta sin que se lo pidan convierte una
+petición en varias contra el servidor de otro, y puede amplificar una caída hasta una estampida.
+Activarlos cuesta una línea; desactivar un comportamiento por defecto que no sabías que existía
+cuesta una sesión de depuración.
 
-Todo lo demás que la librería afirma, lo prueba — incluido que funciona en Node, Chromium y edge.
+**`Retry-After` gana al backoff configurado, pero con tope.** Un servidor que dice cuándo estará
+listo sabe algo que el cliente no puede deducir. El tope existe porque esa confianza tiene un
+límite: un servidor que pidiera una hora colgaría la petición una hora, así que la espera se acota
+con `maxRetryAfterMs` (un minuto por defecto).
+
+**El jitter viene activado y no se desactiva por petición.** Los clientes que fallan a la vez
+reintentan a la vez, y esa ráfaga sincronizada repite el pico que causó el fallo. Hacerlo opcional
+significaría que el comportamiento seguro solo llega a quien ya sabe pedirlo. Se puede desactivar al
+construir `ExponentialBackoff`, donde la elección es explícita y local.
+
+**Un cuerpo de tipo stream se rechaza antes de salir a la red si hay reintentos.** El primer intento
+consume un `ReadableStream`, así que el reintento enviaría un cuerpo vacío: una corrupción silenciosa
+y difícil de rastrear. Fallar de entrada con una explicación cuesta una petición y reporta el
+problema real.
+
+**`set-cookie` vive en `response.setCookie`, no en `response.headers`.** Un record plano no puede
+contener una cabecera que aparece varias veces, así que dejarla ahí devolvería solo la última cookie
+sin avisar. Es mejor que la clave no exista a que exista mintiendo.
+
+**El `fetch` es inyectable.** Convierte la red en un parámetro en vez de en una global, que es lo que
+permite que las pruebas corran sin mockear internos de módulos, que quien llama aporte un polyfill o
+un cliente instrumentado, y que el mismo código funcione en Node, navegadores y edge sin un flag de
+compilación.
 
 ## Pruebas
 

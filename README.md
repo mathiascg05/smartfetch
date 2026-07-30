@@ -41,7 +41,7 @@ distinct from network failure, and no runtime dependencies.
 - [Configuration reference](#configuration-reference)
 - [Response and errors](#response-and-errors)
 - [Design patterns](#design-patterns)
-- [Limitations and non-goals](#limitations-and-non-goals)
+- [Design decisions](#design-decisions)
 - [Testing](#testing)
 - [Origin](#origin)
 - [License](#license)
@@ -284,35 +284,47 @@ client.interceptors.request.eject(authId);
 Request interceptors run in reverse registration order (LIFO) and response interceptors in
 registration order (FIFO), matching `axios`.
 
+For a config that may carry multi-value headers, build a `Headers` instead of spreading — it handles
+all three shapes:
+
+```ts
+client.interceptors.request.use((config) => {
+  const headers = new Headers(config.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  config.headers = headers;
+  return config;
+});
+```
+
 ## Configuration reference
 
 `RequestConfig` (every field is optional). It can be supplied as the client's default configuration
 and/or per request; request values are merged over the client ones.
 
-| Option            | Type                          | Description                                                                                                     |
-| ----------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `baseURL`         | `string`                      | Base URL that relative paths resolve against.                                                                   |
-| `url`             | `string`                      | Request path or URL (normally the 1st argument of each method).                                                 |
-| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                         |
-| `headers`         | `Record<string, string>`      | HTTP headers. Merged case-insensitively with the client defaults (see below).                                   |
-| `params`          | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below). |
-| `body`            | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                   |
-| `timeout`         | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline). Bounds a single attempt.                              |
-| `totalTimeout`    | `number`                      | Milliseconds for the whole operation, backoff waits included (`0`/omitted = no global deadline).                |
-| `retries`         | `number`                      | Retries on transient failures (default `0` = one attempt). Not compatible with a stream body — see below.       |
-| `backoff`         | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                                                       |
-| `retryOn`         | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.                                           |
-| `maxRetryAfterMs` | `number`                      | Cap on a `Retry-After` delay requested by the server (default `60000`).                                         |
-| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                            |
-| `validateStatus`  | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                                                              |
-| `signal`          | `AbortSignal`                 | External signal for cancelling the request.                                                                     |
-| `credentials`     | `RequestCredentials`          | Whether the browser sends cookies/auth. **`'include'` enables cookie auth in the browser.**                     |
-| `mode`            | `RequestMode`                 | Cross-origin mode (`cors`, `no-cors`, `same-origin`, ...).                                                      |
-| `cache`           | `RequestCache`                | HTTP cache interaction (`no-store`, `reload`, ...).                                                             |
-| `redirect`        | `RequestRedirect`             | Redirect handling (`follow`, `error`, `manual`).                                                                |
-| `keepalive`       | `boolean`                     | Lets the request outlive the page that started it.                                                              |
-| `referrerPolicy`  | `ReferrerPolicy`              | Referrer policy applied to the request.                                                                         |
-| `integrity`       | `string`                      | Subresource-integrity metadata checked against the response.                                                    |
+| Option            | Type                          | Description                                                                                                       |
+| ----------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `baseURL`         | `string`                      | Base URL that relative paths resolve against.                                                                     |
+| `url`             | `string`                      | Request path or URL (normally the 1st argument of each method).                                                   |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                           |
+| `headers`         | `HeadersInit`                 | HTTP headers: a `Headers`, an array of `[name, value]` pairs, or a record. Merged case-insensitively (see below). |
+| `params`          | `QueryParams`                 | Query parameters (serialized to a query string; arrays supported). Merged with the client defaults (see below).   |
+| `body`            | `unknown`                     | Request body; plain objects are serialized to JSON with their `Content-Type`.                                     |
+| `timeout`         | `number`                      | Milliseconds before aborting (`0`/omitted = no deadline). Bounds a single attempt.                                |
+| `totalTimeout`    | `number`                      | Milliseconds for the whole operation, backoff waits included (`0`/omitted = no global deadline).                  |
+| `retries`         | `number`                      | Retries on transient failures (default `0` = one attempt). Not compatible with a stream body — see below.         |
+| `backoff`         | `BackoffStrategy`             | Wait strategy between retries (Strategy).                                                                         |
+| `retryOn`         | `RetryPredicate`              | Predicate `(error, attempt) => boolean` replacing the default policy.                                             |
+| `maxRetryAfterMs` | `number`                      | Cap on a `Retry-After` delay requested by the server (default `60000`).                                           |
+| `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                              |
+| `validateStatus`  | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                                                                |
+| `signal`          | `AbortSignal`                 | External signal for cancelling the request.                                                                       |
+| `credentials`     | `RequestCredentials`          | Whether the browser sends cookies/auth. **`'include'` enables cookie auth in the browser.**                       |
+| `mode`            | `RequestMode`                 | Cross-origin mode (`cors`, `no-cors`, `same-origin`, ...).                                                        |
+| `cache`           | `RequestCache`                | HTTP cache interaction (`no-store`, `reload`, ...).                                                               |
+| `redirect`        | `RequestRedirect`             | Redirect handling (`follow`, `error`, `manual`).                                                                  |
+| `keepalive`       | `boolean`                     | Lets the request outlive the page that started it.                                                                |
+| `referrerPolicy`  | `ReferrerPolicy`              | Referrer policy applied to the request.                                                                           |
+| `integrity`       | `string`                      | Subresource-integrity metadata checked against the response.                                                      |
 
 The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
@@ -341,6 +353,10 @@ Client defaults and per-request configuration are combined per field:
 - **`params`** merge too, so a client-level default (an API key, a tenant id) survives a request
   that brings its own parameters. Same-key collisions go to the request; passing `null` or
   `undefined` drops the parameter entirely, which is how a client default is opted out of.
+- **Multi-value headers**: a name the request supplies **replaces every value the client had for
+  that name** — it does not append. Repeats _within_ one side are kept, which is how you send the
+  same header twice. Note that `fetch` joins same-name values into one comma-separated field line
+  before sending, the RFC-equivalent form; nothing is dropped.
 - Every other field is **replaced** by the request's value when present.
 
 ### Retries and request bodies
@@ -425,16 +441,36 @@ any).
 - **Singleton** — the exported default instance (`import smartfetch from '@mathiascg05/smartfetch'`).
 - **Interceptors (AOP)** — request/response hooks for cross-cutting concerns.
 
-## Limitations
+## Design decisions
 
-One known gap, stated plainly:
+Why the library behaves the way it does. Each of these was a choice with a cheaper alternative.
 
-- **Request headers are `Record<string, string>`.** You cannot pass a `Headers` instance, and you
-  cannot send the same request header twice. Response headers are unaffected: repeated `Set-Cookie`
-  values are preserved in `response.setCookie`.
+**Retries are off by default.** A library that retries without being asked turns one request into
+several on someone else's server, and can quietly amplify an outage into a stampede. Opting in takes
+one line; opting out of a default you did not know about takes a debugging session.
 
-Everything else the library claims, it tests — including running in Node, Chromium and edge
-runtimes.
+**`Retry-After` beats the configured backoff, but has a cap.** A server that states when it will be
+ready knows something the client cannot infer. The cap exists because that trust has a limit: a
+server asking for an hour would otherwise hang the request for an hour, so the delay is bounded by
+`maxRetryAfterMs` (one minute by default).
+
+**Jitter is on by default and cannot be disabled per request.** Clients that fail together retry
+together, and the synchronised burst repeats the spike that caused the failure. Making it opt-in
+would mean the safe behaviour only reaches whoever already knows to ask for it. It can be turned off
+when constructing `ExponentialBackoff`, where the choice is explicit and local.
+
+**A stream body is rejected before the request is sent when retries are on.** The first attempt
+drains a `ReadableStream`, so a retry would send an empty body — a silent, hard-to-trace corruption.
+Failing up front with an explanation costs one request and reports the real problem.
+
+**`set-cookie` lives in `response.setCookie`, not in `response.headers`.** A flat record cannot hold
+a header that appears more than once, so keeping it there would return only the last cookie without
+saying so. An absent key is better than one that quietly lies.
+
+**`fetch` is injectable.** It makes the network a parameter rather than a global, which is what lets
+the test suite run without mocking module internals, lets a caller supply a polyfill or an
+instrumented client, and lets the same code run in Node, browsers and edge runtimes without a build
+flag.
 
 ## Testing
 

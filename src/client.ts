@@ -293,7 +293,11 @@ export class SmartFetch {
       // `headers` and `params` are the only fields merged in depth; a plain spread
       // would drop client-level defaults (an API key in `params`, for instance)
       // the moment a request brought its own.
-      headers: mergeHeaders(this.defaults.headers, config.headers),
+      // Se guarda en la forma más estrecha que no pierda nada: un record cuando
+      // los nombres son únicos, y pares solo si hay multi-valor. Así el idioma
+      // habitual dentro de un interceptor —`{ ...config.headers, X: '1' }`—
+      // sigue funcionando en todos los casos que ya funcionaban.
+      headers: toRequestHeaders(mergeHeaders(this.defaults.headers, config.headers)),
     };
 
     if (this.defaults.params ?? config.params) {
