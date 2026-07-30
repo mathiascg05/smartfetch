@@ -280,7 +280,7 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 | ----------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `baseURL`         | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                  |
 | `url`             | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                            |
-| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                     |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                              |
 | `headers`         | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
 | `params`          | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
 | `body`            | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
@@ -337,17 +337,17 @@ await client.get('/usuarios', { params: { page: 1 } });
 
 Cada método resuelve con un `SmartFetchResponse<T>`:
 
-| Campo        | Tipo                     | Descripción                                                               |
-| ------------ | ------------------------ | ------------------------------------------------------------------------- |
-| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304).          |
-| `status`     | `number`                 | Código de estado HTTP.                                                    |
-| `statusText` | `string`                 | Texto del estado.                                                         |
-| `headers`    | `Record<string, string>` | Cabeceras de la respuesta.                                                |
-| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, sin colapsar (vacío si no hay ninguna). |
-| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                           |
-| `url`        | `string`                 | URL final de la petición.                                                 |
-| `config`     | `RequestConfig`          | Configuración efectiva usada.                                             |
-| `raw`        | `Response`               | El `Response` nativo sin procesar.                                        |
+| Campo        | Tipo                     | Descripción                                                                       |
+| ------------ | ------------------------ | --------------------------------------------------------------------------------- |
+| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304 y en todo `HEAD`). |
+| `status`     | `number`                 | Código de estado HTTP.                                                            |
+| `statusText` | `string`                 | Texto del estado.                                                                 |
+| `headers`    | `Record<string, string>` | Cabeceras de la respuesta.                                                        |
+| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, sin colapsar (vacío si no hay ninguna).         |
+| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                                   |
+| `url`        | `string`                 | URL final de la petición.                                                         |
+| `config`     | `RequestConfig`          | Configuración efectiva usada.                                                     |
+| `raw`        | `Response`               | El `Response` nativo sin procesar.                                                |
 
 Los fallos se normalizan a una jerarquía de errores tipada. Todos extienden `SmartFetchError`,
 que expone el discriminador `type` y guards para estrechar el tipo:
@@ -399,7 +399,6 @@ adoptarlo:
 
 - **No expone `credentials` / `mode` / `cache` / `redirect` / `keepalive` de `RequestInit`.** En la
   práctica esto significa que **la autenticación por cookies en el navegador no está soportada**.
-- **No hay `HEAD` ni `OPTIONS`**: solo `GET`, `POST`, `PUT`, `PATCH` y `DELETE`.
 - **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
   cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
   conservan en `response.setCookie`.

@@ -60,6 +60,39 @@ export async function startServer(): Promise<TestServer> {
         });
         return;
 
+      // Responde a HEAD con las mismas cabeceras que tendría un GET, incluido
+      // Content-Length, pero sin cuerpo: es lo que exige HTTP y lo que hace que
+      // decidir "sin cuerpo" por código de estado no baste.
+      case '/head':
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Content-Length': '27',
+          'X-Recurso': 'existe',
+        });
+        res.end(req.method === 'HEAD' ? undefined : '{"contenido":"del recurso"}');
+        return;
+
+      // OPTIONS con Allow y cuerpo: a diferencia de HEAD, sí puede traerlo.
+      case '/options':
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            Allow: 'GET, HEAD, OPTIONS',
+            'Content-Type': 'application/json',
+          });
+          res.end('{"metodos":["GET","HEAD","OPTIONS"]}');
+          return;
+        }
+        json({ error: 'method not allowed' }, 405);
+        return;
+
+      // Devuelve el cuerpo que recibió, para comprobar que HEAD/OPTIONS no envían.
+      case '/echo-body': {
+        let recibido = '';
+        req.on('data', (c) => (recibido += String(c)));
+        req.on('end', () => json({ method: req.method, body: recibido }));
+        return;
+      }
+
       // Dos Set-Cookie: un Record plano solo conservaría una.
       case '/cookies':
         res.setHeader('Set-Cookie', ['a=1; Path=/', 'b=2; Path=/']);

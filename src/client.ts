@@ -24,6 +24,7 @@ import {
 import type {
   FetchAdapter,
   HeadersInit,
+  HttpMethod,
   RequestConfig,
   ResponseType,
   SmartFetchOptions,
@@ -97,6 +98,19 @@ function readSetCookie(headers: Headers): string[] {
   const single = headers.get('set-cookie');
   return single === null ? [] : [single];
 }
+
+/**
+ * Methods that never carry a request body.
+ *
+ * `GET` and `HEAD` are body-less by specification; `OPTIONS` may technically carry
+ * one, but doing so is so rarely supported by servers that sending it silently
+ * would surprise more than it helps.
+ */
+const BODYLESS_REQUEST_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>([
+  'GET',
+  'HEAD',
+  'OPTIONS',
+]);
 
 /** Looks up a header by name, case-insensitively. */
 function hasHeader(headers: HeadersInit, name: string): boolean {
@@ -588,6 +602,33 @@ export class SmartFetch {
     return this.request<T>({ ...config, method: 'DELETE', url });
   }
 
+  /**
+   * Performs a `HEAD` request.
+   *
+   * A `HEAD` response carries headers but never a body, so `data` is always
+   * `null` regardless of {@link RequestConfig.responseType}.
+   *
+   * @param url - Path or URL of the resource.
+   * @param config - Extra request configuration.
+   */
+  head(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<null>> {
+    return this.request<null>({ ...config, method: 'HEAD', url });
+  }
+
+  /**
+   * Performs an `OPTIONS` request.
+   *
+   * Unlike `HEAD`, an `OPTIONS` response may carry a body, so it is parsed like
+   * any other. The request itself never carries one.
+   *
+   * @typeParam T - Expected type of the parsed response body.
+   * @param url - Path or URL of the resource.
+   * @param config - Extra request configuration.
+   */
+  options<T = unknown>(url: string, config: RequestConfig = {}): Promise<SmartFetchResponse<T>> {
+    return this.request<T>({ ...config, method: 'OPTIONS', url });
+  }
+
   /** Builds the native options (`RequestInit`) from the effective configuration. */
   private buildRequestInit(config: RequestConfig): RequestInit {
     const headers: HeadersInit = { ...config.headers };
@@ -599,7 +640,10 @@ export class SmartFetch {
     // The signal (timeout + external signal combined) is injected by withTimeout
     // when the request runs; `init.signal` is deliberately left untouched here.
 
-    if (config.body !== undefined && config.method !== 'GET') {
+    // GET, HEAD and OPTIONS never carry a request body. `mergeConfig` always sets
+    // `method`, so no fallback is needed here; a `Set.has(undefined)` would be
+    // `false` anyway, matching the previous behaviour.
+    if (config.body !== undefined && !BODYLESS_REQUEST_METHODS.has(config.method as HttpMethod)) {
       if (isPlainObject(config.body)) {
         init.body = JSON.stringify(config.body);
         if (!hasHeader(headers, 'content-type')) {
@@ -664,7 +708,12 @@ export class SmartFetch {
     responseType: ResponseType,
     config: RequestConfig,
   ): Promise<unknown> {
-    if (SmartFetch.NULL_BODY_STATUSES.has(raw.status)) {
+    // A HEAD response carries headers but no body, whatever its status says. This
+    // has to key off the method, not the status: a HEAD answering 200 with a
+    // Content-Length would otherwise take the normal path — which happens to work
+    // for JSON (an empty text parses to null) but would yield an empty Blob for
+    // `blob` and a ParseError for `formData`.
+    if (config.method === 'HEAD' || SmartFetch.NULL_BODY_STATUSES.has(raw.status)) {
       return null;
     }
 

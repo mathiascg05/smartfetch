@@ -13,8 +13,11 @@ import type { BackoffStrategy } from './retry/backoff.js';
 
 /**
  * HTTP methods supported by the client.
+ *
+ * `HEAD` and `OPTIONS` never carry a request body. `HEAD` additionally never
+ * carries a *response* body — see {@link SmartFetchResponse.data}.
  */
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
 /**
  * Format the response body should be read as.
