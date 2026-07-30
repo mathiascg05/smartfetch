@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
 [![tamaño](https://img.shields.io/badge/bundle%20ESM-3.8%20kB%20gzip-brightgreen.svg)](#pruebas)
-[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#pruebas)
+[![mutation score](https://img.shields.io/badge/mutation%20score-88%25-green.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -428,16 +428,13 @@ Todos comparten además `config` (la petición que falló) y `cause` (el error o
 
 ## Limitaciones
 
-SmartFetch es deliberadamente pequeño. Esto es lo que **no** hace hoy, y conviene saberlo antes de
-adoptarlo:
+Un hueco conocido, dicho sin rodeos:
 
-- **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
-  cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
-  conservan en `response.setCookie`.
+- **Las cabeceras de petición son `Record<string, string>`.** No se puede pasar una instancia de
+  `Headers` ni enviar dos veces la misma cabecera. Las de respuesta no se ven afectadas: los valores
+  repetidos de `Set-Cookie` se conservan en `response.setCookie`.
 
-Para cargas de producción que necesiten cualquiera de esas cosas, [axios](https://github.com/axios/axios),
-[ky](https://github.com/sindresorhus/ky) u [ofetch](https://github.com/unjs/ofetch) son opciones
-más completas.
+Todo lo demás que la librería afirma, lo prueba — incluido que funciona en Node, Chromium y edge.
 
 ## Pruebas
 

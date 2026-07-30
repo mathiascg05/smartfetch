@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-07-30
+
+Cierra las limitaciones que un usuario real notaría, corrige dos defectos de
+correctitud y sustituye la última afirmación del README sin respaldo por pruebas
+que corren en tres runtimes.
+
+### Added
+
+- Métodos `head()` y `options()`. `HEAD` nunca trae cuerpo de respuesta: `data`
+  es `null` en cualquier `responseType`, decidido por el método y no por el
+  código de estado.
+- Passthrough de las opciones nativas de `RequestInit`: `credentials`, `mode`,
+  `cache`, `redirect`, `keepalive`, `referrerPolicy` e `integrity`. Se propagan
+  solo cuando se definen. **`credentials: 'include'` habilita la autenticación
+  por cookie en navegador**, que era la limitación que más adopción costaba.
+- Suite de navegador: 22 pruebas en Chromium headless (Vitest + Playwright)
+  contra endpoints reales, usando el `fetch` del navegador.
+- Suite edge: 17 pruebas dentro de un sandbox de `@edge-runtime`.
+- Comprobación estática de que `src/` no importa módulos internos de Node ni usa
+  `process`/`Buffer`.
+
+### Changed
+
+- **BREAKING**: `headers['set-cookie']` deja de existir. Un `Record` plano no
+  puede representar una cabecera repetida, así que devolvía solo la última cookie
+  sin avisar. La lista completa está en `response.setCookie`.
+- El párrafo de apertura de ambos README abre por el motor de reintentos en lugar
+  de por "wrapper estilo axios": es el diferenciador real frente a competidores
+  del mismo peso.
+- El presupuesto de tamaño sube de 4 KB a 5 KB y su configuración se mueve a
+  `.size-limit.js`, donde la decisión puede explicarse. El proyecto deja de
+  competir por tamaño.
+
+### Fixed
+
+- `totalTimeout` enmascaraba errores ajenos: al disparar el temporizador, cualquier
+  error se convertía en `TimeoutError` con el real enterrado en `cause`. Un 404 que
+  llegaba tarde se reportaba como plazo agotado. Ahora solo se reetiqueta una
+  cancelación que el propio plazo haya causado.
+- `HEAD` con `responseType` `blob` habría devuelto un `Blob` vacío y con `formData`
+  un `ParseError`, porque el cuerpo se decidía por código de estado.
+
 ## [2.0.0] - 2026-07-29
 
 Endurecimiento a partir de una auditoría externa: nueve bugs de comportamiento
@@ -94,6 +136,7 @@ Cambios de comportamiento observables. **Rompen compatibilidad**:
   and a default `smartfetch` singleton.
 - Dual ESM + CommonJS build with type declarations.
 
-[Unreleased]: https://github.com/mathiascg05/smartfetch/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/mathiascg05/smartfetch/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/mathiascg05/smartfetch/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mathiascg05/smartfetch/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/mathiascg05/smartfetch/releases/tag/v1.0.0

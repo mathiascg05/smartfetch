@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
 [![bundle size](https://img.shields.io/badge/ESM%20bundle-3.8%20kB%20gzip-brightgreen.svg)](#testing)
-[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#testing)
+[![mutation score](https://img.shields.io/badge/mutation%20score-88%25-green.svg)](#testing)
 [![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
 [![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -425,18 +425,16 @@ any).
 - **Singleton** — the exported default instance (`import smartfetch from '@mathiascg05/smartfetch'`).
 - **Interceptors (AOP)** — request/response hooks for cross-cutting concerns.
 
-## Limitations and non-goals
+## Limitations
 
-SmartFetch is deliberately small. These are the things it does **not** do today — worth knowing
-before adopting it:
+One known gap, stated plainly:
 
-- **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
-  multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
-  in `response.setCookie`.
+- **Request headers are `Record<string, string>`.** You cannot pass a `Headers` instance, and you
+  cannot send the same request header twice. Response headers are unaffected: repeated `Set-Cookie`
+  values are preserved in `response.setCookie`.
 
-For production workloads needing any of the above, [axios](https://github.com/axios/axios),
-[ky](https://github.com/sindresorhus/ky) or [ofetch](https://github.com/unjs/ofetch) are more
-complete choices.
+Everything else the library claims, it tests — including running in Node, Chromium and edge
+runtimes.
 
 ## Testing
 
