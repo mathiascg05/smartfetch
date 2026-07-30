@@ -3,17 +3,30 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
-[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.6%20kB%20gzip-brightgreen.svg)](#pruebas)
-[![mutation score](https://img.shields.io/badge/mutation%20score-86%25-green.svg)](#pruebas)
+[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.8%20kB%20gzip-brightgreen.svg)](#pruebas)
+[![mutation score](https://img.shields.io/badge/mutation%20score-88%25-green.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
-Wrapper resiliente sobre la API nativa **`fetch`**, escrito en **TypeScript** y **sin dependencias
-de runtime**. Ofrece una interfaz limpia y de alto nivel (estilo `axios`) apoyándose en `fetch` por
-debajo: timeout configurable, reintentos automáticos con estrategias de espera intercambiables,
-métodos HTTP completos, interceptores y un modelo de errores tipado.
+Un wrapper de `fetch` construido alrededor de un motor de reintentos que se toma el fallo en serio.
 
-> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18** · **ESM + CJS** · async/await y Promesas
+La mayoría de clientes HTTP pequeños reintentan con una espera fija o exponencial y ahí se quedan.
+SmartFetch añade lo que decide si reintentar sirve de algo:
+
+- **Respeta `Retry-After`** en 429 y 503, en los dos formatos del RFC —segundos y fecha HTTP— con
+  tope configurable. Si el servidor dice cuándo estará listo, eso gana a cualquier estimación del
+  cliente.
+- **El jitter viene activado.** Sin él, los clientes que fallan a la vez reintentan a la vez y
+  repiten el pico que causó el fallo.
+- **`totalTimeout` acota la operación completa**, esperas de backoff incluidas — no solo cada
+  intento, así que los reintentos no convierten en silencio un presupuesto de 5 s en 40 s.
+- **Un cuerpo que no se puede reenviar se rechaza de entrada.** Reintentar un `ReadableStream` ya
+  consumido enviaría un cuerpo vacío; en su lugar la petición falla explicando por qué.
+
+Alrededor de eso: los métodos HTTP completos, interceptores, un modelo de errores tipado que
+distingue la cancelación del fallo de red, y cero dependencias de runtime.
+
+> **TypeScript** · **Cero dependencias de runtime** · **Node ≥ 18, Chromium y edge** · **ESM + CJS**
 
 🇬🇧 [Read this in English](./README.md)
 
@@ -280,7 +293,7 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 | ----------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `baseURL`         | `string`                      | URL base a la que se resuelven las rutas relativas.                                                                  |
 | `url`             | `string`                      | Ruta o URL de la petición (normalmente va como 1er argumento del método).                                            |
-| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE`.                                                                     |
+| `method`          | `HttpMethod`                  | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` \| `HEAD` \| `OPTIONS`.                                              |
 | `headers`         | `Record<string, string>`      | Cabeceras HTTP. Se fusionan sin distinguir mayúsculas (ver abajo).                                                   |
 | `params`          | `QueryParams`                 | Parámetros de consulta (se serializan a query string; admite arrays). Se fusionan con los del cliente (ver abajo).   |
 | `body`            | `unknown`                     | Cuerpo; los objetos planos se serializan a JSON con su `Content-Type`.                                               |
@@ -293,9 +306,30 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 | `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                 |
 | `validateStatus`  | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                         |
 | `signal`          | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                             |
+| `credentials`     | `RequestCredentials`          | Si el navegador envía cookies/credenciales. **`'include'` habilita la auth por cookie en navegador.**                |
+| `mode`            | `RequestMode`                 | Modo de origen cruzado (`cors`, `no-cors`, `same-origin`, ...).                                                      |
+| `cache`           | `RequestCache`                | Interacción con la caché HTTP (`no-store`, `reload`, ...).                                                           |
+| `redirect`        | `RequestRedirect`             | Tratamiento de las redirecciones (`follow`, `error`, `manual`).                                                      |
+| `keepalive`       | `boolean`                     | Permite que la petición sobreviva a la página que la inició.                                                         |
+| `referrerPolicy`  | `ReferrerPolicy`              | Política de referrer aplicada a la petición.                                                                         |
+| `integrity`       | `string`                      | Metadatos de subresource-integrity verificados contra la respuesta.                                                  |
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Cookies en el navegador
+
+La autenticación por cookie necesita `credentials`, que es passthrough puro hacia `fetch`:
+
+```ts
+const api = new SmartFetch({
+  baseURL: 'https://api.ejemplo.com',
+  credentials: 'include', // envía cookies, también en origen cruzado
+});
+```
+
+Todas las opciones de `RequestInit` de la tabla se propagan **solo si las defines**. Si omites una,
+decide `fetch`, exactamente como si SmartFetch no estuviera.
 
 ### Reglas de fusión
 
@@ -337,17 +371,17 @@ await client.get('/usuarios', { params: { page: 1 } });
 
 Cada método resuelve con un `SmartFetchResponse<T>`:
 
-| Campo        | Tipo                     | Descripción                                                               |
-| ------------ | ------------------------ | ------------------------------------------------------------------------- |
-| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304).          |
-| `status`     | `number`                 | Código de estado HTTP.                                                    |
-| `statusText` | `string`                 | Texto del estado.                                                         |
-| `headers`    | `Record<string, string>` | Cabeceras de la respuesta.                                                |
-| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, sin colapsar (vacío si no hay ninguna). |
-| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                           |
-| `url`        | `string`                 | URL final de la petición.                                                 |
-| `config`     | `RequestConfig`          | Configuración efectiva usada.                                             |
-| `raw`        | `Response`               | El `Response` nativo sin procesar.                                        |
+| Campo        | Tipo                     | Descripción                                                                                          |
+| ------------ | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `data`       | `T`                      | Cuerpo ya parseado según `responseType` (`null` en 204/205/304 y en todo `HEAD`).                    |
+| `status`     | `number`                 | Código de estado HTTP.                                                                               |
+| `statusText` | `string`                 | Texto del estado.                                                                                    |
+| `headers`    | `Record<string, string>` | Cabeceras de la respuesta. **No incluye `set-cookie`** — ver `setCookie`.                            |
+| `setCookie`  | `string[]`               | Todas las cabeceras `Set-Cookie`, en orden (vacío si no hay ninguna). El único sitio donde aparecen. |
+| `ok`         | `boolean`                | `true` si el estado se consideró satisfactorio.                                                      |
+| `url`        | `string`                 | URL final de la petición.                                                                            |
+| `config`     | `RequestConfig`          | Configuración efectiva usada.                                                                        |
+| `raw`        | `Response`               | El `Response` nativo sin procesar.                                                                   |
 
 Los fallos se normalizan a una jerarquía de errores tipada. Todos extienden `SmartFetchError`,
 que expone el discriminador `type` y guards para estrechar el tipo:
@@ -394,21 +428,13 @@ Todos comparten además `config` (la petición que falló) y `cause` (el error o
 
 ## Limitaciones
 
-SmartFetch es deliberadamente pequeño. Esto es lo que **no** hace hoy, y conviene saberlo antes de
-adoptarlo:
+Un hueco conocido, dicho sin rodeos:
 
-- **No expone `credentials` / `mode` / `cache` / `redirect` / `keepalive` de `RequestInit`.** En la
-  práctica esto significa que **la autenticación por cookies en el navegador no está soportada**.
-- **No hay `HEAD` ni `OPTIONS`**: solo `GET`, `POST`, `PUT`, `PATCH` y `DELETE`.
-- **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
-  cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
-  conservan en `response.setCookie`.
-- **Probado solo en Node ≥ 18.** El código es agnóstico al runtime y debería funcionar en
-  navegadores y edge runtimes, pero no hay una suite de pruebas de navegador que lo respalde.
+- **Las cabeceras de petición son `Record<string, string>`.** No se puede pasar una instancia de
+  `Headers` ni enviar dos veces la misma cabecera. Las de respuesta no se ven afectadas: los valores
+  repetidos de `Set-Cookie` se conservan en `response.setCookie`.
 
-Para cargas de producción que necesiten cualquiera de esas cosas, [axios](https://github.com/axios/axios),
-[ky](https://github.com/sindresorhus/ky) u [ofetch](https://github.com/unjs/ofetch) son opciones
-más completas.
+Todo lo demás que la librería afirma, lo prueba — incluido que funciona en Node, Chromium y edge.
 
 ## Pruebas
 
@@ -416,13 +442,28 @@ más completas.
 npm install
 npm run lint          # reglas de ESLint + Prettier
 npm run typecheck     # tsc --noEmit
-npm run test          # Jest (ESM)
+npm run test          # Jest (ESM) — unitarias + integración en Node
 npm run test:coverage # exige el umbral del 100%
+npm run test:edge     # la misma librería dentro de un sandbox edge
+npm run test:browser  # Chromium headless vía Playwright
+npm run mutation      # StrykerJS
 npm run build         # dist/ (ESM + CJS + tipos)
 npm run check:pack    # publint + arethetypeswrong
 npm run size          # impone el presupuesto de tamaño
 npm run example       # prueba de humo end-to-end contra una API real
 ```
+
+### Dónde se ejecutan realmente las pruebas
+
+| Runtime       | Suite                         | Qué ejercita                                                       |
+| ------------- | ----------------------------- | ------------------------------------------------------------------ |
+| **Node ≥ 18** | Jest, unitarias + integración | Todo, contra un servidor `node:http` real                          |
+| **Chromium**  | Vitest + Playwright           | El `fetch` real del navegador contra endpoints servidos por Vitest |
+| **Edge**      | Jest + `@edge-runtime`        | La librería dentro de un sandbox de Workers/Vercel Edge            |
+
+Las suites de integración y de navegador golpean HTTP real, no adaptadores simulados. La distinción
+importa: nueve bugs de comportamiento sobrevivieron una vez a un 100% de cobertura de líneas
+precisamente porque todas las pruebas pasaban por un `Response` fabricado a mano.
 
 La suite son 117 pruebas repartidas en 9 archivos y cubre el 100% de sentencias, ramas, funciones y
 líneas. Ese umbral lo impone `jest.config.mjs`, de modo que una rama sin cubrir rompe CI en lugar de

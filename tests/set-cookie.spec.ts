@@ -43,15 +43,34 @@ describe('cabeceras de respuesta con valores múltiples', () => {
     });
   });
 
-  it('el objeto plano `headers` pierde una de las dos cookies', async () => {
+  it('`headers` no expone set-cookie en absoluto', async () => {
     const client = new SmartFetch();
     const res = await client.get(`${base}/dos-cookies`);
 
     // El dato SÍ llega: está en la respuesta nativa.
     expect(res.raw.headers.getSetCookie()).toHaveLength(2);
-    // Pero al volcarlo a un Record solo sobrevive una: por eso hace falta un
-    // campo dedicado en lugar de confiar en `headers`.
-    expect(res.headers['set-cookie']).not.toContain('a=1');
+    // Un Record plano no puede representar una cabecera repetida, así que la
+    // clave se omite por completo. Es preferible que no exista a que exista
+    // devolviendo solo la última cookie sin avisar.
+    expect(res.headers).not.toHaveProperty('set-cookie');
+    expect(Object.keys(res.headers)).not.toContain('set-cookie');
+  });
+
+  it('omite set-cookie incluso cuando solo hay una', async () => {
+    const client = new SmartFetch();
+    const res = await client.get(`${base}/una-cookie`);
+
+    // Sin excepciones: si el número de cookies decidiera si la clave existe, el
+    // consumidor tendría que comprobar ambos sitios.
+    expect(res.headers).not.toHaveProperty('set-cookie');
+    expect(res.setCookie).toEqual(['solo=1; Path=/']);
+  });
+
+  it('el resto de cabeceras siguen intactas', async () => {
+    const client = new SmartFetch();
+    const res = await client.get(`${base}/dos-cookies`);
+
+    expect(res.headers['content-type']).toContain('application/json');
   });
 
   it('expone las dos cookies sin perder ninguna', async () => {
