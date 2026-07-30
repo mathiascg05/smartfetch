@@ -23,7 +23,6 @@ import {
 } from './errors.js';
 import type {
   FetchAdapter,
-  HeadersInit,
   HttpMethod,
   RequestConfig,
   ResponseType,
@@ -31,6 +30,7 @@ import type {
   SmartFetchResponse,
 } from './types.js';
 import { isAbortError, withTimeout } from './timeout.js';
+import { hasHeader, mergeHeaders, normalizeHeaders, toRequestHeaders } from './headers.js';
 import { defaultShouldRetry, withRetry } from './retry/retry.js';
 import { InterceptorManager } from './interceptors.js';
 import { buildURL } from './url.js';
@@ -127,52 +127,6 @@ const BODYLESS_REQUEST_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>([
   'HEAD',
   'OPTIONS',
 ]);
-
-/** Looks up a header by name, case-insensitively. */
-function hasHeader(headers: HeadersInit, name: string): boolean {
-  const target = name.toLowerCase();
-  return Object.keys(headers).some((key) => key.toLowerCase() === target);
-}
-
-/**
- * Merges two header sets case-insensitively.
- *
- * HTTP header names are case-insensitive, so `content-type` and `Content-Type`
- * are the same header. A plain object spread would keep both keys and `fetch`
- * would send them as a single comma-joined value, which is almost never what the
- * caller meant.
- *
- * `override` wins, and the header is emitted **with the capitalization the winning
- * side wrote** rather than being canonicalized: it is the least surprising
- * behaviour and keeps working against servers that expect a particular spelling.
- *
- * @param base - Lower-precedence headers (the client defaults).
- * @param override - Higher-precedence headers (the request's own).
- */
-function mergeHeaders(base: HeadersInit = {}, override: HeadersInit = {}): HeadersInit {
-  const merged: HeadersInit = {};
-  /** Maps the lowercase name to the key currently emitted for it. */
-  const emittedFor = new Map<string, string>();
-
-  const put = (name: string, value: string): void => {
-    const lower = name.toLowerCase();
-    const previous = emittedFor.get(lower);
-    if (previous !== undefined) {
-      delete merged[previous];
-    }
-    emittedFor.set(lower, name);
-    merged[name] = value;
-  };
-
-  for (const [name, value] of Object.entries(base)) {
-    put(name, value);
-  }
-  for (const [name, value] of Object.entries(override)) {
-    put(name, value);
-  }
-
-  return merged;
-}
 
 /**
  * Checks that what came out of the request interceptor chain is still a usable
@@ -665,10 +619,14 @@ export class SmartFetch {
 
   /** Builds the native options (`RequestInit`) from the effective configuration. */
   private buildRequestInit(config: RequestConfig): RequestInit {
-    const headers: HeadersInit = { ...config.headers };
+    // `mergeConfig` ya normalizó, pero un `request()` directo puede traer otra
+    // forma, así que se vuelve a pasar por el normalizador: es idempotente.
+    const headers = normalizeHeaders(config.headers);
     const init: RequestInit = {
       method: config.method,
-      headers,
+      // Se rellena al final: el Content-Type automático puede añadir una entrada
+      // y eso decide si cabe un Record o hacen falta los pares.
+      headers: undefined,
     };
 
     // The signal (timeout + external signal combined) is injected by withTimeout
@@ -691,12 +649,14 @@ export class SmartFetch {
       if (isPlainObject(config.body)) {
         init.body = JSON.stringify(config.body);
         if (!hasHeader(headers, 'content-type')) {
-          headers['Content-Type'] = 'application/json';
+          headers.push(['Content-Type', 'application/json']);
         }
       } else {
         init.body = config.body as BodyInit;
       }
     }
+
+    init.headers = toRequestHeaders(headers);
 
     return init;
   }

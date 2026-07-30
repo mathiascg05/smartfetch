@@ -51,10 +51,13 @@ export async function startServer(): Promise<TestServer> {
 
     switch (path) {
       // Devuelve lo que recibió, para verificar cabeceras y query reales.
+      // `rawHeaders` es un array plano [n1, v1, n2, v2, ...] que conserva las
+      // repetidas; `req.headers` ya las colapsa, así que no sirve para multi-valor.
       case '/echo':
         json({
           method: req.method,
           headers: req.headers,
+          rawHeaders: req.rawHeaders,
           query: Object.fromEntries(url.searchParams.entries()),
           queryRaw: url.search,
         });

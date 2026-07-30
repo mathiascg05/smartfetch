@@ -8,6 +8,7 @@ import {
   TimeoutError,
 } from '../../src/errors.js';
 import { FixedBackoff } from '../../src/retry/backoff.js';
+import type { HeadersInit } from '../../src/types.js';
 import { startServer, type TestServer } from './server.js';
 
 /**
@@ -290,5 +291,92 @@ describe('integración: SmartFetch contra un servidor real', () => {
       expect(error).toBeInstanceOf(ParseError);
       expect((error as ParseError).text).toBe('{no es json');
     });
+  });
+});
+
+/**
+ * Cabeceras de petición en sus tres formas, contra el servidor real.
+ *
+ * Lo que importa aquí es que el servidor **reciba** lo que se pretendía, no que
+ * el `RequestInit` tenga cierta pinta: es la diferencia entre probar la intención
+ * y probar el efecto.
+ */
+describe('integración: formas de cabeceras de petición', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer();
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  /** Extrae los valores de una cabecera desde el array plano `rawHeaders`. */
+  function valoresCrudos(raw: string[], nombre: string): string[] {
+    const objetivo = nombre.toLowerCase();
+    const valores: string[] = [];
+    for (let i = 0; i < raw.length; i += 2) {
+      if (raw[i].toLowerCase() === objetivo) {
+        valores.push(raw[i + 1]);
+      }
+    }
+    return valores;
+  }
+
+  it.each([
+    ['Record', { 'X-Forma': 'record' }],
+    ['array de pares', [['X-Forma', 'record']] as HeadersInit],
+    ['Headers', new Headers({ 'X-Forma': 'record' }) as HeadersInit],
+  ])('el servidor recibe la cabecera enviada como %s', async (_nombre, headers) => {
+    const client = new SmartFetch({ baseURL: server.base });
+
+    const res = await client.get<{ headers: Record<string, string> }>('/echo', { headers });
+
+    expect(res.data.headers['x-forma']).toBe('record');
+  });
+
+  it('el servidor recibe los dos valores de una cabecera multi-valor', async () => {
+    const client = new SmartFetch({ baseURL: server.base });
+
+    const res = await client.get<{ rawHeaders: string[] }>('/echo', {
+      headers: [
+        ['Accept', 'application/xml'],
+        ['Accept', 'text/plain'],
+      ],
+    });
+
+    // `fetch` construye un Headers por dentro y une los valores del mismo nombre
+    // con coma antes de enviarlos. Es la forma canónica equivalente según el RFC
+    // 9110 §5.3, no una pérdida: los dos valores llegan al servidor. Emitir dos
+    // líneas de cabecera separadas no es posible a través de fetch.
+    expect(valoresCrudos(res.data.rawHeaders, 'accept')).toEqual(['application/xml, text/plain']);
+  });
+
+  it('los valores de la petición reemplazan los del cliente en el servidor', async () => {
+    const client = new SmartFetch({
+      baseURL: server.base,
+      headers: { Accept: 'application/json' },
+    });
+
+    const res = await client.get<{ rawHeaders: string[] }>('/echo', {
+      headers: [
+        ['Accept', 'application/xml'],
+        ['Accept', 'text/plain'],
+      ],
+    });
+
+    const recibidos = valoresCrudos(res.data.rawHeaders, 'accept');
+    expect(recibidos).toEqual(['application/xml, text/plain']);
+    expect(recibidos.join()).not.toContain('application/json');
+  });
+
+  it('una entrada inválida no llega a salir a la red', async () => {
+    const client = new SmartFetch({ baseURL: server.base });
+    const antes = server.state.hits['/echo'] ?? 0;
+
+    await client.get('/echo', { headers: 42 as unknown as HeadersInit }).catch(() => undefined);
+
+    expect(server.state.hits['/echo'] ?? 0).toBe(antes);
   });
 });
