@@ -384,7 +384,24 @@ export class SmartFetch {
     // at any point — mid-attempt or mid-backoff — rather than only bounding each
     // attempt the way `timeout` does.
     const controller = new AbortController();
-    let expired = false;
+
+    // The deadline aborts with a sentinel of its own instead of setting a flag. A
+    // flag only says "the timer fired", not "the timer caused this error", so a
+    // real failure arriving after the deadline got relabelled as a timeout with the
+    // genuine error buried in `cause`.
+    //
+    // Ownership is then read off our own controller — `signal.reason` is whatever
+    // aborted it first — rather than off the error's `cause`. That keeps the check
+    // independent of the adapter: a custom `fetch` that rejects with an AbortError
+    // of its own making, instead of propagating `signal.reason` the way the spec
+    // requires, would break a cause-based check.
+    //
+    // The sentinel is still named `AbortError` so that a spec-compliant adapter
+    // rejecting with it lands in `isAbortError` as a cancellation, not a transport
+    // failure.
+    const deadlineReason = Object.assign(new Error(`totalTimeout of ${totalTimeout} ms elapsed`), {
+      name: 'AbortError',
+    });
 
     const onExternalAbort = () => controller.abort(effective.signal?.reason);
     if (effective.signal) {
@@ -395,18 +412,19 @@ export class SmartFetch {
       }
     }
 
-    const timer = setTimeout(() => {
-      expired = true;
-      controller.abort();
-    }, totalTimeout);
+    const timer = setTimeout(() => controller.abort(deadlineReason), totalTimeout);
 
     // The composed signal replaces the original for the whole run, so both the
     // per-attempt timeout and the backoff waits honour the global deadline.
     return this.runAttempts<T>({ ...effective, signal: controller.signal }, retries)
       .catch((error: unknown) => {
-        // Only our own timer turns the abort into a TimeoutError; an external
-        // cancellation stays a CancelledError.
-        if (expired) {
+        // Only a cancellation this deadline actually caused becomes a
+        // TimeoutError. Anything else — an HTTP error, a transport failure, an
+        // external cancellation — propagates untouched.
+        // Both halves matter: the deadline must have been what aborted the
+        // controller, *and* the error must be a cancellation. A 404 that arrives
+        // after the deadline satisfies the first but not the second.
+        if (controller.signal.reason === deadlineReason && error instanceof CancelledError) {
           throw new TimeoutError(totalTimeout, { config: effective, cause: error });
         }
         throw error;
