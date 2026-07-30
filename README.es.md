@@ -293,9 +293,30 @@ del cliente y/o por petición; los valores de la petición se fusionan sobre los
 | `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                                 |
 | `validateStatus`  | `(status: number) => boolean` | Qué códigos se aceptan (default: rango 2xx).                                                                         |
 | `signal`          | `AbortSignal`                 | Señal externa para cancelar la petición.                                                                             |
+| `credentials`     | `RequestCredentials`          | Si el navegador envía cookies/credenciales. **`'include'` habilita la auth por cookie en navegador.**                |
+| `mode`            | `RequestMode`                 | Modo de origen cruzado (`cors`, `no-cors`, `same-origin`, ...).                                                      |
+| `cache`           | `RequestCache`                | Interacción con la caché HTTP (`no-store`, `reload`, ...).                                                           |
+| `redirect`        | `RequestRedirect`             | Tratamiento de las redirecciones (`follow`, `error`, `manual`).                                                      |
+| `keepalive`       | `boolean`                     | Permite que la petición sobreviva a la página que la inició.                                                         |
+| `referrerPolicy`  | `ReferrerPolicy`              | Política de referrer aplicada a la petición.                                                                         |
+| `integrity`       | `string`                      | Metadatos de subresource-integrity verificados contra la respuesta.                                                  |
 
 El `fetch` a usar se inyecta aparte, en el 2º argumento del constructor:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Cookies en el navegador
+
+La autenticación por cookie necesita `credentials`, que es passthrough puro hacia `fetch`:
+
+```ts
+const api = new SmartFetch({
+  baseURL: 'https://api.ejemplo.com',
+  credentials: 'include', // envía cookies, también en origen cruzado
+});
+```
+
+Todas las opciones de `RequestInit` de la tabla se propagan **solo si las defines**. Si omites una,
+decide `fetch`, exactamente como si SmartFetch no estuviera.
 
 ### Reglas de fusión
 
@@ -397,8 +418,6 @@ Todos comparten además `config` (la petición que falló) y `cause` (el error o
 SmartFetch es deliberadamente pequeño. Esto es lo que **no** hace hoy, y conviene saberlo antes de
 adoptarlo:
 
-- **No expone `credentials` / `mode` / `cache` / `redirect` / `keepalive` de `RequestInit`.** En la
-  práctica esto significa que **la autenticación por cookies en el navegador no está soportada**.
 - **Cabeceras de petición solo como `Record<string, string>`**: sin instancias de `Headers` ni
   cabeceras de petición repetidas. En la respuesta, las cabeceras `Set-Cookie` repetidas **sí** se
   conservan en `response.setCookie`.

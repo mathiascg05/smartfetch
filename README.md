@@ -294,9 +294,30 @@ and/or per request; request values are merged over the client ones.
 | `responseType`    | `ResponseType`                | `json` (default) \| `text` \| `blob` \| `arrayBuffer` \| `formData`.                                            |
 | `validateStatus`  | `(status: number) => boolean` | Which codes are accepted (default: the 2xx range).                                                              |
 | `signal`          | `AbortSignal`                 | External signal for cancelling the request.                                                                     |
+| `credentials`     | `RequestCredentials`          | Whether the browser sends cookies/auth. **`'include'` enables cookie auth in the browser.**                     |
+| `mode`            | `RequestMode`                 | Cross-origin mode (`cors`, `no-cors`, `same-origin`, ...).                                                      |
+| `cache`           | `RequestCache`                | HTTP cache interaction (`no-store`, `reload`, ...).                                                             |
+| `redirect`        | `RequestRedirect`             | Redirect handling (`follow`, `error`, `manual`).                                                                |
+| `keepalive`       | `boolean`                     | Lets the request outlive the page that started it.                                                              |
+| `referrerPolicy`  | `ReferrerPolicy`              | Referrer policy applied to the request.                                                                         |
+| `integrity`       | `string`                      | Subresource-integrity metadata checked against the response.                                                    |
 
 The `fetch` to use is injected separately, as the 2nd constructor argument:
 `new SmartFetch(defaults, { fetch })` (`SmartFetchOptions`).
+
+### Cookies in the browser
+
+Cookie-based authentication needs `credentials`, which is pure passthrough to `fetch`:
+
+```ts
+const api = new SmartFetch({
+  baseURL: 'https://api.example.com',
+  credentials: 'include', // send cookies, including cross-origin
+});
+```
+
+Every `RequestInit` option above is forwarded **only when you set it**. Leave one out and `fetch`
+decides, exactly as if SmartFetch were not there.
 
 ### Merge rules
 
@@ -397,8 +418,6 @@ any).
 SmartFetch is deliberately small. These are the things it does **not** do today — worth knowing
 before adopting it:
 
-- **No `RequestInit` passthrough for `credentials` / `mode` / `cache` / `redirect` / `keepalive`.**
-  In practice this means **cookie-based authentication in the browser is not supported**.
 - **Request headers only as `Record<string, string>`** — no `Headers` instances and no repeated
   multi-value request headers. On the response side, repeated `Set-Cookie` headers _are_ preserved
   in `response.setCookie`.

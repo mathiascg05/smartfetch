@@ -100,6 +100,22 @@ function readSetCookie(headers: Headers): string[] {
 }
 
 /**
+ * Native `RequestInit` options forwarded verbatim when the caller sets them.
+ *
+ * They are pure passthrough: SmartFetch neither interprets nor defaults them, so
+ * a request without them behaves exactly like plain `fetch`.
+ */
+const PASSTHROUGH_OPTIONS = [
+  'credentials',
+  'mode',
+  'cache',
+  'redirect',
+  'keepalive',
+  'referrerPolicy',
+  'integrity',
+] as const satisfies readonly (keyof RequestConfig & keyof RequestInit)[];
+
+/**
  * Methods that never carry a request body.
  *
  * `GET` and `HEAD` are body-less by specification; `OPTIONS` may technically carry
@@ -639,6 +655,16 @@ export class SmartFetch {
 
     // The signal (timeout + external signal combined) is injected by withTimeout
     // when the request runs; `init.signal` is deliberately left untouched here.
+
+    // Native RequestInit options are forwarded only when the caller set them.
+    // Copying them unconditionally would pin defaults of our own on top of the
+    // ones `fetch` already defines, changing behaviour nobody asked us to change.
+    for (const option of PASSTHROUGH_OPTIONS) {
+      const value = config[option];
+      if (value !== undefined) {
+        Object.assign(init, { [option]: value });
+      }
+    }
 
     // GET, HEAD and OPTIONS never carry a request body. `mergeConfig` always sets
     // `method`, so no fallback is needed here; a `Set.has(undefined)` would be

@@ -167,6 +167,34 @@ export interface RequestConfig {
    * of the `timeout` control.
    */
   signal?: AbortSignal;
+
+  /**
+   * Whether the browser sends credentials (cookies, HTTP auth, TLS certificates)
+   * with the request.
+   *
+   * **`'include'` is what enables cookie-based authentication in the browser**,
+   * including cross-origin requests. Left unset, `fetch` decides — `'same-origin'`
+   * in browsers.
+   */
+  credentials?: RequestCredentials;
+
+  /** Cross-origin mode of the request (`'cors'`, `'no-cors'`, `'same-origin'`, ...). */
+  mode?: RequestMode;
+
+  /** How the request interacts with the HTTP cache (`'no-store'`, `'reload'`, ...). */
+  cache?: RequestCache;
+
+  /** How redirects are handled (`'follow'`, `'error'`, `'manual'`). */
+  redirect?: RequestRedirect;
+
+  /** Allows the request to outlive the page that started it (`navigator.sendBeacon` style). */
+  keepalive?: boolean;
+
+  /** Referrer policy applied to the request. */
+  referrerPolicy?: ReferrerPolicy;
+
+  /** Subresource-integrity metadata (`"sha384-..."`) checked against the response. */
+  integrity?: string;
 }
 
 /**
