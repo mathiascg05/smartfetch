@@ -49,9 +49,16 @@ export type QueryParamValue = string | number | boolean | null | undefined;
 export type QueryParams = Record<string, QueryParamValue | QueryParamValue[]>;
 
 /**
- * HTTP headers as plain string key/value pairs.
+ * Headers accepted for a request.
+ *
+ * The same three shapes `fetch` takes: a `Headers` instance, an array of
+ * `[name, value]` pairs, or a plain record. Arrays and `Headers` are the only two
+ * that can express the same header more than once (`Accept`, `Link`, ...).
+ *
+ * Whatever comes in is normalized to pairs on entry, so the shape chosen here has
+ * no effect on the request that goes out.
  */
-export type HeadersInit = Record<string, string>;
+export type HeadersInit = Headers | [string, string][] | Record<string, string>;
 
 /**
  * Predicate deciding whether a failed request should be retried.

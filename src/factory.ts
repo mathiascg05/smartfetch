@@ -18,6 +18,7 @@
  */
 
 import { SmartFetch } from './client.js';
+import { mergeHeaders } from './headers.js';
 import type { BackoffStrategy } from './retry/backoff.js';
 import type {
   FetchAdapter,
@@ -95,7 +96,7 @@ export class SmartFetchBuilder {
    * @returns The builder itself, for chaining.
    */
   header(name: string, value: string): this {
-    this.config.headers = { ...this.config.headers, [name]: value };
+    this.config.headers = mergeHeaders(this.config.headers, [[name, value]]);
     return this;
   }
 
@@ -106,7 +107,7 @@ export class SmartFetchBuilder {
    * @returns The builder itself, for chaining.
    */
   headers(headers: HeadersInit): this {
-    this.config.headers = { ...this.config.headers, ...headers };
+    this.config.headers = mergeHeaders(this.config.headers, headers);
     return this;
   }
 

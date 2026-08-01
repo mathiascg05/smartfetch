@@ -92,3 +92,62 @@ describe('contrato de los interceptores de petición', () => {
     expect((init?.headers as Record<string, string>)['X-Demo']).toBe('1');
   });
 });
+
+/**
+ * Formas de modificar las cabeceras desde un interceptor.
+ *
+ * El idioma habitual —hacer spread de `config.headers`— debe seguir funcionando,
+ * porque es el que está documentado desde siempre. Para una configuración que
+ * pueda traer cabeceras multi-valor, construir un `Headers` es lo correcto,
+ * porque acepta las tres formas.
+ */
+describe('interceptores y cabeceras', () => {
+  function capturing() {
+    const seen: { init?: RequestInit } = {};
+    const fetchMock = jest.fn<FetchAdapter>(async (_url, init) => {
+      seen.init = init;
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    return { seen, fetchMock };
+  }
+
+  function nombres(init: RequestInit | undefined): string[] {
+    const out: string[] = [];
+    new Headers(init?.headers).forEach((_v, n) => out.push(n));
+    return out.sort();
+  }
+
+  it('el spread de config.headers sigue funcionando con cabeceras previas', async () => {
+    const { seen, fetchMock } = capturing();
+    const client = new SmartFetch({ headers: { 'X-Base': '1' } }, { fetch: fetchMock });
+    client.interceptors.request.use((config) => {
+      config.headers = { ...(config.headers as Record<string, string>), Authorization: 'Bearer t' };
+      return config;
+    });
+
+    await client.get('https://api.x.com/a');
+
+    expect(nombres(seen.init)).toEqual(['authorization', 'x-base']);
+  });
+
+  it('construir un Headers funciona incluso con multi-valor previo', async () => {
+    const { seen, fetchMock } = capturing();
+    const client = new SmartFetch({}, { fetch: fetchMock });
+    client.interceptors.request.use((config) => {
+      const headers = new Headers(config.headers);
+      headers.set('Authorization', 'Bearer t');
+      config.headers = headers;
+      return config;
+    });
+
+    await client.get('https://api.x.com/a', {
+      headers: [
+        ['Accept', 'application/xml'],
+        ['Accept', 'text/plain'],
+      ],
+    });
+
+    expect(nombres(seen.init)).toEqual(['accept', 'authorization']);
+    expect(new Headers(seen.init?.headers).get('accept')).toBe('application/xml, text/plain');
+  });
+});

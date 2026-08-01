@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-01
+
+Cierra la última limitación declarada del README. Con esta versión la sección de
+limitaciones desaparece: no queda ninguna.
+
+### Added
+
+- `RequestConfig.headers` acepta las tres formas nativas que admite `fetch`: una
+  instancia de `Headers`, un array de pares `[nombre, valor]` o un
+  `Record<string, string>`. Todo se normaliza a pares al entrar, en el módulo
+  nuevo `src/headers.ts`.
+- Cabeceras de petición **multi-valor**: la misma cabecera puede aparecer varias
+  veces con `Headers` o con arrays de pares. La regla es de **reemplazo por
+  nombre**: los valores de la petición sustituyen todos los del cliente para ese
+  nombre, y los duplicados se preservan dentro de un mismo nivel.
+- Sección **«Decisiones de diseño»** en ambos README, en el sitio que ocupaban las
+  limitaciones.
+
+### Fixed
+
+- Las cabeceras que no eran un `Record` fallaban **en silencio**: una instancia de
+  `Headers` desaparecía y un array de pares se corrompía en `{"0": [...]}`,
+  produciendo una cabecera llamada `0`. Ahora las tres formas funcionan y
+  cualquier otra cosa lanza `SmartFetchError` con `type: 'request'` en vez de
+  descartarse.
+- `SmartFetchBuilder.header()` y `.headers()` hacían spread sobre la
+  configuración, con el mismo efecto corruptor.
+- `example.ts` no ejercitaba nada de v2 ni v3; se reescribe para recorrer la
+  superficie actual completa.
+
+### Changed
+
+- `HeadersInit` pasa de `Record<string, string>` al union nativo. Es aditivo en
+  ejecución; un consumidor de TypeScript que lea `response.config.headers`
+  indexándolo como record necesitará estrechar el tipo.
+
 ## [3.0.0] - 2026-07-30
 
 Cierra las limitaciones que un usuario real notaría, corrige dos defectos de
@@ -136,7 +172,8 @@ Cambios de comportamiento observables. **Rompen compatibilidad**:
   and a default `smartfetch` singleton.
 - Dual ESM + CommonJS build with type declarations.
 
-[Unreleased]: https://github.com/mathiascg05/smartfetch/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/mathiascg05/smartfetch/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/mathiascg05/smartfetch/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mathiascg05/smartfetch/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mathiascg05/smartfetch/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/mathiascg05/smartfetch/releases/tag/v1.0.0
