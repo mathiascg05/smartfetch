@@ -3,8 +3,8 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen.svg)](#pruebas)
-[![tamaño](https://img.shields.io/badge/bundle%20ESM-3.8%20kB%20gzip-brightgreen.svg)](#pruebas)
-[![mutation score](https://img.shields.io/badge/mutation%20score-88%25-green.svg)](#pruebas)
+[![tamaño](https://img.shields.io/badge/bundle%20ESM-4.2%20kB%20gzip-brightgreen.svg)](#pruebas)
+[![mutation score](https://img.shields.io/badge/mutation%20score-89%25-green.svg)](#pruebas)
 [![dependencias de runtime](https://img.shields.io/badge/dependencias%20de%20runtime-0-brightgreen.svg)](#)
 [![licencia](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -506,9 +506,10 @@ Las suites de integración y de navegador golpean HTTP real, no adaptadores simu
 importa: nueve bugs de comportamiento sobrevivieron una vez a un 100% de cobertura de líneas
 precisamente porque todas las pruebas pasaban por un `Response` fabricado a mano.
 
-La suite son 117 pruebas repartidas en 9 archivos y cubre el 100% de sentencias, ramas, funciones y
-líneas. Ese umbral lo impone `jest.config.mjs`, de modo que una rama sin cubrir rompe CI en lugar de
-erosionar el número en silencio.
+La suite de Node son 341 pruebas repartidas en 25 archivos y cubre el 100% de sentencias, ramas,
+funciones y líneas. Ese umbral lo impone `jest.config.mjs`, de modo que una rama sin cubrir rompe CI
+en lugar de erosionar el número en silencio. Encima de eso corren 17 pruebas dentro del sandbox de
+edge y 25 en Chromium.
 
 ## Origen
 

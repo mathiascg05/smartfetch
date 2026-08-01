@@ -137,6 +137,39 @@ describe('cabeceras de petición: formas de entrada', () => {
     });
   });
 
+  describe('valores que no son cadenas', () => {
+    it('un número y un booleano se envían como su representación textual', async () => {
+      const { seen, fetchMock } = capturing();
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await client.get('https://api.x.com/a', {
+        headers: { 'X-Reintento': 3, 'X-Debug': true } as unknown as HeadersInit,
+      });
+
+      expect(paresDe(seen.init)).toEqual([
+        ['x-debug', 'true'],
+        ['x-reintento', '3'],
+      ]);
+    });
+
+    it('también dentro de un array de pares', async () => {
+      const { seen, fetchMock } = capturing();
+      const client = new SmartFetch({}, { fetch: fetchMock });
+
+      await client.get('https://api.x.com/a', {
+        headers: [
+          ['X-Reintento', 3],
+          ['X-Debug', false],
+        ] as unknown as HeadersInit,
+      });
+
+      expect(paresDe(seen.init)).toEqual([
+        ['x-debug', 'false'],
+        ['x-reintento', '3'],
+      ]);
+    });
+  });
+
   describe('multi-valor', () => {
     it('preserva dos valores de la misma cabecera dentro de una petición', async () => {
       const { seen, fetchMock } = capturing();
@@ -193,6 +226,7 @@ describe('cabeceras de petición: formas de entrada', () => {
       ['una cadena', 'X-A: 1'],
       ['un booleano', true],
       ['un array de algo que no son pares', [['solo-uno']]],
+      ['un par con tres elementos', [['X-A', '1', 'sobra']]],
       ['un array con un elemento que no es array', ['X-A', '1']],
       ['un par con nombre que no es string', [[42, 'x']]],
       ['un par con valor no primitivo', [['X-A', {}]]],
@@ -220,6 +254,27 @@ describe('cabeceras de petición: formas de entrada', () => {
 
       expect((error as SmartFetchError).message).toMatch(/headers/i);
       expect((error as SmartFetchError).message).toMatch(/Headers/);
+    });
+
+    /**
+     * Un mensaje que solo dijera "cabeceras inválidas" obligaría a quien lo lee a
+     * ir a buscar cuál de todas y en qué se equivocó. Cada forma de fallo nombra
+     * lo que llegó, así que se verifica ese texto y no solo el tipo de error.
+     */
+    it.each([
+      ['un número', 42, 'but got number'],
+      ['null', null, 'but got null'],
+      ['una cadena', 'X-A: 1', 'but got string'],
+      ['un par inválido', [[42, 'x']], 'array pair'],
+      ['un valor de objeto', { 'X-A': {} }, 'an object whose "X-A" value is object'],
+    ])('el mensaje para %s dice qué llegó', async (_desc, entrada, fragmento) => {
+      const client = new SmartFetch({}, { fetch: capturing().fetchMock });
+
+      const error = await client
+        .get('https://api.x.com/a', { headers: entrada as HeadersInit })
+        .catch((e: unknown) => e);
+
+      expect((error as SmartFetchError).message).toContain(fragmento);
     });
 
     it('nunca descarta una entrada inválida en silencio', async () => {

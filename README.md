@@ -3,8 +3,8 @@
 [![CI](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiascg05/smartfetch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@mathiascg05/smartfetch.svg)](https://www.npmjs.com/package/@mathiascg05/smartfetch)
 [![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](#testing)
-[![bundle size](https://img.shields.io/badge/ESM%20bundle-3.8%20kB%20gzip-brightgreen.svg)](#testing)
-[![mutation score](https://img.shields.io/badge/mutation%20score-88%25-green.svg)](#testing)
+[![bundle size](https://img.shields.io/badge/ESM%20bundle-4.2%20kB%20gzip-brightgreen.svg)](#testing)
+[![mutation score](https://img.shields.io/badge/mutation%20score-89%25-green.svg)](#testing)
 [![runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen.svg)](#)
 [![license](https://img.shields.io/npm/l/@mathiascg05/smartfetch.svg)](./LICENSE)
 
@@ -501,9 +501,9 @@ The integration and browser suites hit real HTTP rather than mocked adapters. Th
 matters: nine behaviour bugs once survived 100% line coverage precisely because every test went
 through a hand-made `Response`.
 
-The suite is 117 tests across 9 files and covers 100% of statements, branches, functions and lines.
-That threshold is enforced by `jest.config.mjs`, so an uncovered branch fails CI rather than
-quietly eroding the number.
+The Node suite is 341 tests across 25 files and covers 100% of statements, branches, functions and
+lines. That threshold is enforced by `jest.config.mjs`, so an uncovered branch fails CI rather than
+quietly eroding the number. On top of it, 17 tests run inside the edge sandbox and 25 in Chromium.
 
 ## Origin
 

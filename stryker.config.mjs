@@ -24,11 +24,13 @@ export default {
   mutate: ['src/**/*.ts', '!src/**/*.spec.ts'],
   coverageAnalysis: 'perTest',
   tempDirName: '.stryker-tmp',
-  // Umbral fijado sobre el 88.76% realmente alcanzado. `break` se deja en 87 como
-  // margen de estabilidad: 82 de los mutantes se matan por timeout, y eso depende
+  // Umbral fijado sobre el 89.27% realmente alcanzado. `break` se deja en 87 como
+  // margen de estabilidad: 96 de los mutantes se matan por timeout, y eso depende
   // de la carga de la máquina. El margen es el mismo criterio de siempre —un par
   // de puntos por debajo de lo medido—, no una rebaja para que pase una corrida
-  // fallida. Sube conforme suban las pruebas: 80 -> 85 -> 87.
+  // fallida. Sube conforme suban las pruebas: 80 -> 85 -> 87. La 3.1.0 sube medio
+  // punto (88.76 -> 89.27) y no mueve el umbral: subirlo a 88 dejaría 1.27 puntos
+  // de margen, menos de los que había, y el ruido de los timeouts es mayor que eso.
   thresholds: { high: 92, low: 87, break: 87 },
   timeoutMS: 20000,
   // Las pruebas de integración y de plazos hacen esperas reales, así que un
