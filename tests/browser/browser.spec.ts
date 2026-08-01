@@ -209,6 +209,41 @@ describe('navegador (Chromium)', () => {
     });
   });
 
+  describe('cabeceras en sus tres formas', () => {
+    it('acepta el Headers nativo del navegador', async () => {
+      const client = new SmartFetch({ baseURL: base });
+      const headers = new Headers({ 'X-Desde': 'headers-nativo' });
+
+      const res = await client.get<{ headers: Record<string, string> }>('/echo', { headers });
+
+      expect(res.data.headers['x-desde']).toBe('headers-nativo');
+    });
+
+    it('acepta un array de pares y fusiona con los del cliente', async () => {
+      const client = new SmartFetch({ baseURL: base, headers: { 'X-Cliente': 'si' } });
+
+      const res = await client.get<{ headers: Record<string, string> }>('/echo', {
+        headers: [['X-Peticion', 'si']],
+      });
+
+      expect(res.data.headers['x-cliente']).toBe('si');
+      expect(res.data.headers['x-peticion']).toBe('si');
+    });
+
+    it('los valores de la petición reemplazan los del cliente', async () => {
+      const client = new SmartFetch({
+        baseURL: base,
+        headers: new Headers({ 'X-Token': 'viejo' }),
+      });
+
+      const res = await client.get<{ headers: Record<string, string> }>('/echo', {
+        headers: { 'x-token': 'nuevo' },
+      });
+
+      expect(res.data.headers['x-token']).toBe('nuevo');
+    });
+  });
+
   describe('credentials', () => {
     it('propaga credentials al fetch del navegador sin romper la petición', async () => {
       const client = new SmartFetch({ baseURL: base, credentials: 'include' });

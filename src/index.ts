@@ -15,7 +15,7 @@
  */
 
 /** Current library version. */
-export const VERSION = '3.0.0';
+export const VERSION = '3.1.0';
 
 // HTTP client (core of the library).
 export { SmartFetch } from './client.js';
