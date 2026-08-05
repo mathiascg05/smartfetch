@@ -6,9 +6,14 @@ name: Release
 # el commit y el workflow exactos que lo produjeron. Quien instale el paquete
 # puede verificar que salió de este repositorio y no de la máquina de alguien.
 #
-# Requisito previo, que se configura una sola vez en npm y no desde aquí: el
-# paquete debe tener habilitado un *trusted publisher* apuntando a este
-# repositorio y a este workflow. Sin eso, `npm publish --provenance` falla.
+# Lo que hace falta para que la procedencia se genere: el secreto NPM_TOKEN con
+# permiso de escritura sobre el scope, el permiso `id-token: write` de más abajo,
+# npm >= 9.5 en el runner y el campo `repository` público del package.json. Nada
+# de eso se configura fuera de aquí salvo el secreto.
+#
+# npm recomienda además el *trusted publishing*, que publica sin token de larga
+# vida. No sirve para la primera publicación: se habilita desde los ajustes de un
+# paquete que ya existe en el registro, así que se migra después, no antes.
 on:
   push:
     tags: ['v*']
